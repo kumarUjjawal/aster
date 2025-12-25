@@ -382,6 +382,7 @@ impl Render for RootView {
             .flex()
             .items_center()
             .gap_1()
+            .flex_shrink_0()
             .child(make_view_button(
                 "view-editor",
                 IconName::PanelLeft,
@@ -428,6 +429,7 @@ impl Render for RootView {
             .bg(Theme::panel())
             .border_t_1()
             .border_color(Theme::border())
+            .flex_shrink_0()
             .child(view_controls)
             .child(
                 div()
@@ -443,6 +445,8 @@ impl Render for RootView {
                 div()
                     .text_sm()
                     .text_color(Theme::muted())
+                    .truncate()
+                    .max_w(px(520.))
                     .child(status_right),
             );
 

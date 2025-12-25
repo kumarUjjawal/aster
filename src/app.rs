@@ -1,6 +1,7 @@
 use crate::commands::{
     About, CloseWindow, Copy, Cut, NewFile, OpenFile, Paste, Quit, SaveFile, SaveFileAs, SelectAll,
 };
+use crate::services::assets::AsterAssetSource;
 use crate::services::fs::{pick_save_path, read_to_string, write_atomic};
 use crate::ui::root::RootView;
 use camino::Utf8PathBuf;
@@ -19,7 +20,7 @@ pub fn run() {
     let pending_urls: Arc<Mutex<VecDeque<String>>> = Arc::new(Mutex::new(VecDeque::new()));
     let pending_urls_for_callback = pending_urls.clone();
 
-    let app = Application::new();
+    let app = Application::new().with_assets(AsterAssetSource::new());
     app.on_open_urls(move |urls| {
         let mut queue = pending_urls_for_callback
             .lock()

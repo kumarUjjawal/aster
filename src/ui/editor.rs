@@ -2,10 +2,10 @@ use crate::commands::{Copy, Cut, Paste, SelectAll};
 use crate::model::document::DocumentState;
 use crate::ui::theme::Theme;
 use gpui::{
-    App, ClipboardItem, Context, Entity, FocusHandle, Focusable, HighlightStyle,
+    App, Bounds, ClipboardItem, Context, Entity, FocusHandle, Focusable, HighlightStyle,
     InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent,
     ParentElement, Render, ScrollHandle, StatefulInteractiveElement, Styled, StyledText, Window,
-    div, point, px,
+    canvas, div, fill, point, px, size,
 };
 use std::ops::Range;
 use std::panic::AssertUnwindSafe;
@@ -84,32 +84,11 @@ impl Render for EditorView {
         let doc = self.document.read(cx);
         let text_owned = doc.text();
         let cursor_byte = doc.char_to_byte(doc.cursor);
-        let marker = "|";
-        let marker_len = marker.len();
         let show_caret = doc.selection.is_none();
-        let show_caret_marker = show_caret && is_focused && self.caret_visible;
+        let draw_caret = show_caret && is_focused && self.caret_visible;
 
-        let mut display_text = text_owned.clone();
-        if show_caret_marker {
-            if cursor_byte <= display_text.len() {
-                display_text.insert_str(cursor_byte, marker);
-            } else {
-                display_text.push_str(marker);
-            }
-        }
-
-        let mut highlights = self.selection_highlights(&doc);
-        if show_caret_marker {
-            highlights.push((
-                cursor_byte..cursor_byte.saturating_add(marker_len),
-                HighlightStyle {
-                    color: Some(Theme::accent().into()),
-                    ..Default::default()
-                },
-            ));
-        }
-
-        let mut styled = StyledText::new(display_text);
+        let highlights = self.selection_highlights(&doc);
+        let mut styled = StyledText::new(text_owned);
         if !highlights.is_empty() {
             styled = styled.with_highlights(highlights);
         }
@@ -193,8 +172,6 @@ impl Render for EditorView {
                 let focus_handle = focus_handle.clone();
                 let doc_handle = self.document.clone();
                 let layout_for_event = text_layout.clone();
-                let show_caret_marker = show_caret_marker;
-                let cursor_byte = cursor_byte;
                 move |event: &MouseDownEvent, window: &mut Window, cx_app: &mut App| {
                     focus_handle.focus(window);
                     let _ = doc_handle.update(cx_app, |doc, cx| {
@@ -205,12 +182,6 @@ impl Render for EditorView {
                         .map(|res| match res {
                             Ok(ix) => ix,
                             Err(ix) => ix,
-                        });
-                        let byte_idx = byte_idx.map(|mut b| {
-                            if show_caret_marker && b > cursor_byte {
-                                b = b.saturating_sub(marker_len);
-                            }
-                            b
                         });
                         if let Some(byte_idx) = byte_idx.map(|b| doc.byte_to_char(b)) {
                             if event.modifiers.shift {
@@ -227,8 +198,6 @@ impl Render for EditorView {
             .on_mouse_move({
                 let doc_handle = self.document.clone();
                 let layout_for_event = text_layout.clone();
-                let show_caret_marker = show_caret_marker;
-                let cursor_byte = cursor_byte;
                 move |event: &MouseMoveEvent, _window: &mut Window, cx_app: &mut App| {
                     if !event.dragging() {
                         return;
@@ -241,12 +210,6 @@ impl Render for EditorView {
                         .map(|res| match res {
                             Ok(ix) => ix,
                             Err(ix) => ix,
-                        });
-                        let byte_idx = byte_idx.map(|mut b| {
-                            if show_caret_marker && b > cursor_byte {
-                                b = b.saturating_sub(marker_len);
-                            }
-                            b
                         });
                         if let Some(byte_idx) = byte_idx.map(|b| doc.byte_to_char(b)) {
                             let anchor = doc.selection_anchor.unwrap_or(doc.cursor);
@@ -325,10 +288,12 @@ impl Render for EditorView {
                                     let anchor = doc.selection_anchor.unwrap_or(doc.cursor);
                                     if doc.cursor > 0 {
                                         doc.set_selection(anchor, doc.cursor - 1);
+                                        cx_doc.notify();
                                     }
                                 } else if doc.cursor > 0 {
                                     doc.cursor -= 1;
                                     doc.clear_selection();
+                                    cx_doc.notify();
                                 }
                             }
                             "right" | "arrowright" => {
@@ -336,11 +301,67 @@ impl Render for EditorView {
                                     let anchor = doc.selection_anchor.unwrap_or(doc.cursor);
                                     if doc.cursor < len {
                                         doc.set_selection(anchor, doc.cursor + 1);
+                                        cx_doc.notify();
                                     }
                                 } else if doc.cursor < len {
                                     doc.cursor += 1;
                                     doc.clear_selection();
+                                    cx_doc.notify();
                                 }
+                            }
+                            "up" | "arrowup" => {
+                                let cursor = doc.cursor.min(len);
+                                let line_idx = doc.rope.char_to_line(cursor);
+                                if line_idx == 0 {
+                                    return;
+                                }
+                                let line_start = doc.rope.line_to_char(line_idx);
+                                let col = cursor.saturating_sub(line_start);
+                                let target_line = line_idx - 1;
+                                let target_start = doc.rope.line_to_char(target_line);
+                                let target_len = doc.rope.line(target_line).len_chars();
+                                let max_col = if target_line + 1 < doc.rope.len_lines() {
+                                    target_len.saturating_sub(1)
+                                } else {
+                                    target_len
+                                };
+                                let new_cursor = target_start + col.min(max_col);
+
+                                if shift {
+                                    let anchor = doc.selection_anchor.unwrap_or(cursor);
+                                    doc.set_selection(anchor, new_cursor);
+                                } else {
+                                    doc.cursor = new_cursor;
+                                    doc.clear_selection();
+                                }
+                                cx_doc.notify();
+                            }
+                            "down" | "arrowdown" => {
+                                let cursor = doc.cursor.min(len);
+                                let line_idx = doc.rope.char_to_line(cursor);
+                                if line_idx + 1 >= doc.rope.len_lines() {
+                                    return;
+                                }
+                                let line_start = doc.rope.line_to_char(line_idx);
+                                let col = cursor.saturating_sub(line_start);
+                                let target_line = line_idx + 1;
+                                let target_start = doc.rope.line_to_char(target_line);
+                                let target_len = doc.rope.line(target_line).len_chars();
+                                let max_col = if target_line + 1 < doc.rope.len_lines() {
+                                    target_len.saturating_sub(1)
+                                } else {
+                                    target_len
+                                };
+                                let new_cursor = target_start + col.min(max_col);
+
+                                if shift {
+                                    let anchor = doc.selection_anchor.unwrap_or(cursor);
+                                    doc.set_selection(anchor, new_cursor);
+                                } else {
+                                    doc.cursor = new_cursor;
+                                    doc.clear_selection();
+                                }
+                                cx_doc.notify();
                             }
                             _ => {
                                 if let Some(ch) = event
@@ -368,7 +389,48 @@ impl Render for EditorView {
                     });
                 }
             })
-            .child(styled)
+            .child(
+                div().relative().child(styled).child(
+                    canvas(
+                        move |_, _, _| {},
+                        move |_bounds: Bounds<_>, (), window: &mut Window, _cx: &mut App| {
+                            if !draw_caret {
+                                return;
+                            }
+
+                            let caret_pos = std::panic::catch_unwind(AssertUnwindSafe(|| {
+                                text_layout.position_for_index(cursor_byte)
+                            }))
+                            .ok()
+                            .flatten();
+                            let Some(caret_pos) = caret_pos else {
+                                return;
+                            };
+
+                            let line_height = std::panic::catch_unwind(AssertUnwindSafe(|| {
+                                text_layout.line_height()
+                            }))
+                            .ok()
+                            .unwrap_or(px(0.));
+                            if line_height <= px(0.) {
+                                return;
+                            }
+
+                            window.paint_quad(fill(
+                                Bounds {
+                                    origin: point(caret_pos.x, caret_pos.y),
+                                    size: size(px(1.), line_height),
+                                },
+                                Theme::accent(),
+                            ));
+                        },
+                    )
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .size_full(),
+                ),
+            )
     }
 }
 

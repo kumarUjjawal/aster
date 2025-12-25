@@ -3,6 +3,7 @@ use camino::Utf8PathBuf;
 use rfd::FileDialog;
 use std::fs;
 use std::io::Write;
+use std::path::PathBuf;
 use tempfile::NamedTempFile;
 
 pub fn pick_open_path() -> Option<Utf8PathBuf> {
@@ -16,7 +17,16 @@ pub fn pick_save_path(default: Option<&Utf8PathBuf>) -> Option<Utf8PathBuf> {
     let mut dialog = FileDialog::new().add_filter("Markdown", &["md", "markdown", "mdown"]);
     if let Some(path) = default {
         if let Some(parent) = path.parent() {
-            dialog = dialog.set_directory(parent.as_std_path());
+            let parent_path = parent.as_std_path();
+            let mut dir: Option<PathBuf> = None;
+            if parent_path.is_absolute() {
+                dir = Some(parent_path.to_path_buf());
+            } else if let Ok(cwd) = std::env::current_dir() {
+                dir = Some(cwd.join(parent_path));
+            }
+            if let Some(dir) = dir.filter(|p| p.is_dir()) {
+                dialog = dialog.set_directory(dir);
+            }
         }
         dialog = dialog.set_file_name(path.file_name().unwrap_or("untitled.md"));
     } else {
