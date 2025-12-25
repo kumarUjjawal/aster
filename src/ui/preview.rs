@@ -2,9 +2,9 @@ use crate::model::preview::PreviewState;
 use crate::services::markdown::{Block, InlineRun};
 use crate::ui::theme::Theme;
 use gpui::{
-    App, Context, Entity, FocusHandle, FontWeight, InteractiveElement, IntoElement, KeyDownEvent,
-    MouseButton, MouseDownEvent, ParentElement, Render, ScrollHandle, SharedString,
-    StatefulInteractiveElement, Styled, Window, div, point, px,
+    App, ClickEvent, Context, CursorStyle, Entity, FocusHandle, FontWeight, InteractiveElement,
+    IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Render, ScrollHandle,
+    SharedString, StatefulInteractiveElement, Styled, Window, div, point, px,
 };
 
 pub struct PreviewView {
@@ -160,25 +160,67 @@ fn render_inline_runs(runs: Vec<InlineRun>) -> impl IntoElement {
 }
 
 fn render_inline_run(r: InlineRun) -> impl IntoElement {
-    let mut span = div().child(SharedString::from(r.text));
-    if r.bold {
-        span = span.font_weight(FontWeight::BOLD);
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static LINK_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+    let text = r.text.clone();
+
+    // Base styling that applies to all runs
+    let apply_base_styles = |mut el: gpui::Div| -> gpui::Div {
+        if r.bold {
+            el = el.font_weight(FontWeight::BOLD);
+        }
+        if r.italic {
+            el = el.italic();
+        }
+        if r.code {
+            el = el
+                .font_family("Menlo")
+                .bg(Theme::border())
+                .rounded(px(4.))
+                .px(px(4.))
+                .py(px(2.));
+        }
+        el
+    };
+
+    // For links, we need to add interactivity which changes the type to Stateful<Div>
+    if let Some(ref url) = r.link {
+        let url_for_click = url.clone();
+        let link_id = LINK_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let base = apply_base_styles(div().child(SharedString::from(text)));
+        return base
+            .id(SharedString::from(format!("link_{}", link_id)))
+            .text_color(Theme::accent())
+            .underline()
+            .cursor(CursorStyle::PointingHand)
+            .on_click(move |_: &ClickEvent, _window: &mut Window, cx: &mut App| {
+                open_link(&url_for_click, cx);
+            })
+            .into_any_element();
     }
-    if r.italic {
-        span = span.italic();
+
+    // Non-link runs
+    apply_base_styles(div().child(SharedString::from(text))).into_any_element()
+}
+
+/// Opens a URL in the system's default browser.
+/// Only http://, https://, and mailto: schemes are supported.
+/// Unsupported or malformed URLs are silently ignored.
+fn open_link(url: &str, cx: &mut App) {
+    let url_trimmed = url.trim();
+    if url_trimmed.is_empty() {
+        return;
     }
-    if r.code {
-        span = span
-            .font_family("Menlo")
-            .bg(Theme::border())
-            .rounded(px(4.))
-            .px(px(4.))
-            .py(px(2.));
+
+    // Only allow safe URL schemes
+    if url_trimmed.starts_with("http://")
+        || url_trimmed.starts_with("https://")
+        || url_trimmed.starts_with("mailto:")
+    {
+        cx.open_url(url_trimmed);
     }
-    if r.link.is_some() {
-        span = span.text_color(Theme::accent()).underline();
-    }
-    span
+    // Silently ignore unsupported schemes (file://, javascript:, etc.)
 }
 
 fn split_runs(runs: Vec<InlineRun>) -> Vec<Vec<InlineRun>> {
