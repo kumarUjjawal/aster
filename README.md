@@ -1,8 +1,15 @@
 <div align="center">
-  <img src="./logo.png" alt="Aster logo" width="160" align="left">
-  <h1 style="color: #BF7F7F; margin: 0; line-height: 160px;">Aster</h1>
+<table>
+<tr>
+<td width="180px">
+<img src="./logo.png" alt="Aster logo" width="160"/>
+</td>
+<td>
+<h1>Aster</h1>
+</td>
+</tr>
+</table>
 </div>
-<br clear="left"/>
 
 **Aster** is a Markdown editor built in Rust on top of [GPUI](https://www.gpui.rs/), the GPU-accelerated UI framework from the Zed team. It delivers a live split view: rope-backed editing on the left, formatted preview on the right. The goal is to create a fast and effiecient markdown editor using the gpu rendering. Why am I using `Rope` data structure; because it is fast and it provides several benefit over the regular `String`. If you want to learn more how, you can check out this brilliant article by the `Zed` team [Rope & SumTree](https://zed.dev/blog/zed-decoded-rope-sumtree). `Zed` uses their own version of `Rope` which isn't really a rope but a `SumTree`. Currenlty I am using the regular `Rope` and if there are needs, I might switch to the `Zed` version. Why `gpui`? Because it's GPU accelerated (Metal on MacOs) and it provides precise control over the layout and save us from the hell that is virtual DOM. 
 
