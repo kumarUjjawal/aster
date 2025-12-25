@@ -38,12 +38,11 @@ impl Render for PreviewView {
             .min_w(px(0.))
             .min_h(px(0.))
             .bg(Theme::panel_alt())
-            .border_1()
-            .border_color(Theme::border())
             .p(px(18.))
             .text_sm()
             .text_color(Theme::text())
-            .overflow_scroll()
+            .overflow_y_scroll()
+            .overflow_x_hidden()
             .scrollbar_width(px(10.))
             .track_scroll(&self.scroll_handle)
             .track_focus(&focus_handle)
@@ -64,7 +63,6 @@ impl Render for PreviewView {
                     let key = event.keystroke.key.to_lowercase();
                     let modifiers = event.keystroke.modifiers;
                     let is_cmd = modifiers.platform || modifiers.control;
-                    let shift = modifiers.shift;
 
                     if is_cmd {
                         return;
@@ -74,20 +72,12 @@ impl Render for PreviewView {
                         let max = scroll_handle.max_offset();
                         let offset = scroll_handle.offset();
                         let bounds = scroll_handle.bounds();
-                        let page = if shift {
-                            bounds.size.width
-                        } else {
-                            bounds.size.height
-                        };
+                        let page = bounds.size.height;
                         if page > px(0.) {
                             let amount = page * 0.9;
                             let delta = if key == "pagedown" { -amount } else { amount };
                             let mut new_offset = offset;
-                            if shift {
-                                new_offset.x = (new_offset.x + delta).clamp(-max.width, px(0.));
-                            } else {
-                                new_offset.y = (new_offset.y + delta).clamp(-max.height, px(0.));
-                            }
+                            new_offset.y = (new_offset.y + delta).clamp(-max.height, px(0.));
                             scroll_handle.set_offset(point(new_offset.x, new_offset.y));
                             window.refresh();
                         }
@@ -96,9 +86,6 @@ impl Render for PreviewView {
             })
             .child(
                 div()
-                    .absolute()
-                    .top_0()
-                    .left_0()
                     .flex()
                     .flex_col()
                     .items_start()
@@ -134,10 +121,9 @@ fn render_block(block: Block) -> impl IntoElement {
             .items_start()
             .gap_2()
             .child(div().text_color(Theme::accent()).text_lg().child("•"))
-            .child(render_inline_runs(runs)),
+            .child(div().flex_1().min_w(px(0.)).child(render_inline_runs(runs))),
         Block::CodeBlock(text) => div()
             .font_family("Menlo")
-            .whitespace_nowrap()
             .bg(Theme::border())
             .p(px(10.))
             .rounded(px(4.))
@@ -148,6 +134,8 @@ fn render_block(block: Block) -> impl IntoElement {
             .child(div().w(px(4.)).bg(Theme::strong()))
             .child(
                 div()
+                    .flex_1()
+                    .min_w(px(0.))
                     .text_color(Theme::muted())
                     .italic()
                     .child(render_inline_runs(runs)),
@@ -165,6 +153,7 @@ fn render_inline_runs(runs: Vec<InlineRun>) -> impl IntoElement {
             div()
                 .flex()
                 .flex_row()
+                .flex_wrap()
                 .gap_1()
                 .children(line.into_iter().map(render_inline_run))
         }))

@@ -8,13 +8,22 @@ use crate::ui::editor::EditorView;
 use crate::ui::preview::PreviewView;
 use crate::ui::theme::Theme;
 use crate::ui::widgets::tag;
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    Context, Entity, InteractiveElement, IntoElement, ParentElement, Render, Styled, Window, div,
-    px,
+    Context, Entity, InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement,
+    Render, Styled, Window, div, px,
 };
+use gpui_component::IconName;
 use gpui_component::notification::{Notification, NotificationList};
 use rfd::{MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
 use std::time::Duration;
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum ViewMode {
+    Split,
+    Editor,
+    Preview,
+}
 
 pub struct RootView {
     document: Entity<DocumentState>,
@@ -23,6 +32,7 @@ pub struct RootView {
     preview_view: Entity<crate::ui::preview::PreviewView>,
     notifications: Entity<NotificationList>,
     preview_debounce: Debouncer<RootView>,
+    view_mode: ViewMode,
 }
 
 impl RootView {
@@ -40,6 +50,7 @@ impl RootView {
             preview_view,
             notifications,
             preview_debounce: Debouncer::new(Duration::from_millis(120)),
+            view_mode: ViewMode::Split,
         }
     }
 
@@ -297,11 +308,6 @@ impl Render for RootView {
         }
 
         // Wire global shortcuts for open/save.
-        let path_display = doc_info
-            .0
-            .as_ref()
-            .map(|p| p.to_string())
-            .unwrap_or_else(|| "untitled.md".to_string());
         let status_tag = if doc_info.1 {
             tag("dirty", Theme::warn())
         } else {
@@ -343,6 +349,103 @@ impl Render for RootView {
         };
         window.set_window_title(&window_title);
 
+        let make_view_button = |id: &'static str, icon: IconName, target: ViewMode| {
+            let selected = self.view_mode == target;
+            div()
+                .id(id)
+                .flex()
+                .items_center()
+                .justify_center()
+                .w(px(34.))
+                .h(px(28.))
+                .rounded(px(6.))
+                .text_sm()
+                .cursor_pointer()
+                .when(selected, |this| {
+                    this.bg(Theme::panel_alt()).text_color(Theme::text())
+                })
+                .when(!selected, |this| {
+                    this.text_color(Theme::muted())
+                        .hover(|this| this.bg(Theme::panel_alt()).text_color(Theme::text()))
+                })
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, _: &MouseDownEvent, _, cx| {
+                        this.view_mode = target;
+                        cx.notify();
+                    }),
+                )
+                .child(icon)
+        };
+
+        let view_controls = div()
+            .flex()
+            .items_center()
+            .gap_1()
+            .child(make_view_button(
+                "view-editor",
+                IconName::PanelLeft,
+                ViewMode::Editor,
+            ))
+            .child(make_view_button(
+                "view-split",
+                IconName::LayoutDashboard,
+                ViewMode::Split,
+            ))
+            .child(make_view_button(
+                "view-preview",
+                IconName::PanelRight,
+                ViewMode::Preview,
+            ));
+
+        let file_label = doc_info
+            .0
+            .as_ref()
+            .and_then(|p| p.file_name().map(|name| name.to_string()))
+            .unwrap_or_else(|| "untitled.md".to_string());
+
+        let split_view = div()
+            .flex()
+            .flex_row()
+            .flex_1()
+            .min_h(px(0.))
+            .when(self.view_mode != ViewMode::Preview, |this| {
+                this.child(self.editor_view.clone())
+            })
+            .when(self.view_mode == ViewMode::Split, |this| {
+                this.child(div().w(px(1.)).bg(Theme::border()).flex_shrink_0().h_full())
+            })
+            .when(self.view_mode != ViewMode::Editor, |this| {
+                this.child(self.preview_view.clone())
+            });
+
+        let bottom_bar = div()
+            .flex()
+            .items_center()
+            .gap_3()
+            .px(px(16.))
+            .py(px(10.))
+            .bg(Theme::panel())
+            .border_t_1()
+            .border_color(Theme::border())
+            .child(view_controls)
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .flex_1()
+                    .min_w(px(0.))
+                    .child(div().truncate().child(file_label))
+                    .child(status_tag),
+            )
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(Theme::muted())
+                    .child(status_right),
+            );
+
         div()
             .relative()
             .flex()
@@ -368,36 +471,14 @@ impl Render for RootView {
             }))
             .child(
                 div()
+                    .flex_1()
+                    .min_h(px(0.))
                     .flex()
-                    .items_center()
-                    .justify_between()
-                    .px(px(16.))
-                    .py(px(12.))
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap_3()
-                            .child(format!("File: {}", path_display))
-                            .child(status_tag),
-                    )
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(Theme::muted())
-                            .child(status_right),
-                    ),
-            )
-            .child(
-                div()
-                    .flex_grow()
-                    .flex()
-                    .flex_row()
-                    .gap_3()
+                    .flex_col()
                     .p(px(16.))
-                    .child(self.editor_view.clone())
-                    .child(self.preview_view.clone()),
+                    .child(split_view),
             )
+            .child(bottom_bar)
             .child(self.notifications.clone())
     }
 }
