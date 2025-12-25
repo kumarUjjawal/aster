@@ -4,24 +4,30 @@ pub struct Theme;
 
 impl Theme {
     pub fn bg() -> Rgba {
-        rgb(0x000000)
+        rgb(0xf7f8fa)
     }
     pub fn panel() -> Rgba {
-        rgb(0x1f1f1f)
-    }
-    pub fn panel_alt() -> Rgba {
-        rgb(0x181818)
-    }
-    pub fn border() -> Rgba {
-        rgb(0x2f2f2f)
-    }
-    pub fn text() -> Rgba {
         rgb(0xffffff)
     }
+    pub fn panel_alt() -> Rgba {
+        rgb(0xf2f3f7)
+    }
+    pub fn border() -> Rgba {
+        rgb(0xd8dde3)
+    }
+    pub fn text() -> Rgba {
+        rgb(0x243446)
+    }
     pub fn muted() -> Rgba {
-        rgb(0x9a9a9a)
+        rgb(0x7c8a99)
+    }
+    pub fn accent() -> Rgba {
+        rgb(0x2d7fd2)
     }
     pub fn warn() -> Rgba {
         rgb(0xffb347)
+    }
+    pub fn strong() -> Rgba {
+        rgb(0xc02f4d)
     }
 }

@@ -34,21 +34,32 @@ impl Render for EditorView {
             .get_or_insert_with(|| cx.focus_handle())
             .clone();
         let doc = self.document.read(cx);
-        let mut text_owned = doc.text();
+        let text_owned = doc.text();
         let cursor_pos = doc.cursor.min(text_owned.len());
-        text_owned.insert(cursor_pos, '|');
+        let mut offset = 0usize;
+        let mut lines: Vec<String> = Vec::new();
+        for line in text_owned.split('\n') {
+            let len = line.chars().count();
+            let mut rendered = line.to_string();
+            if cursor_pos >= offset && cursor_pos <= offset + len {
+                let rel = cursor_pos - offset;
+                rendered.insert(rel, '|');
+            }
+            lines.push(rendered);
+            offset += len + 1;
+        }
         let _ = doc;
-        let display = SharedString::from(text_owned);
 
         div()
             .flex_grow()
-            .min_w(px(200.))
+            .min_w(px(360.))
             .bg(Theme::panel())
             .border_1()
             .border_color(Theme::border())
-            .p(px(12.))
+            .p(px(18.))
             .text_sm()
             .text_color(Theme::text())
+            .font_family("Menlo")
             .track_focus(&focus_handle)
             .on_mouse_down(MouseButton::Left, {
                 let focus_handle = focus_handle.clone();
@@ -125,6 +136,12 @@ impl Render for EditorView {
                     });
                 }
             })
-            .child(display)
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .children(lines.into_iter().map(|l| div().child(SharedString::from(l)))),
+            )
     }
 }

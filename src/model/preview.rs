@@ -1,8 +1,8 @@
-use crate::services::markdown::RenderBlock;
+use crate::services::markdown::Block;
 
 #[derive(Clone)]
 pub struct PreviewState {
-    pub blocks: Vec<RenderBlock>,
+    pub blocks: Vec<Block>,
     pub source_revision: u64,
 }
 

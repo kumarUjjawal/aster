@@ -81,7 +81,11 @@ impl Render for RootView {
         }
 
         // Wire global shortcuts for open/save.
-        let path_display = doc_info.0.as_ref().map(|p| p.to_string()).unwrap_or_else(|| "untitled.md".to_string());
+        let path_display = doc_info
+            .0
+            .as_ref()
+            .map(|p| p.to_string())
+            .unwrap_or_else(|| "untitled.md".to_string());
         let status_tag = if doc_info.1 {
             tag("dirty", Theme::warn())
         } else {
@@ -135,10 +139,10 @@ impl Render for RootView {
             })
             .child(
                 div()
-                    .p(px(12.))
+                    .p(px(16.))
                     .flex()
                     .items_center()
-                    .gap_2()
+                    .gap_3()
                     .child(format!("File: {}", path_display))
                     .child(status_tag),
             )
@@ -146,8 +150,8 @@ impl Render for RootView {
                 div()
                     .flex()
                     .flex_row()
-                    .gap_2()
-                    .p(px(12.))
+                    .gap_3()
+                    .p(px(16.))
                     .child(self.editor_view.clone())
                     .child(self.preview_view.clone()),
             )
