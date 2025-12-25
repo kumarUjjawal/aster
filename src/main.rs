@@ -1,4 +1,5 @@
 mod app;
+mod commands;
 mod error;
 mod logging;
 mod model;

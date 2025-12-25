@@ -4,13 +4,13 @@
 <img src="./logo.png" alt="Aster logo" width="160"/>
 </td>
 <td style="border: none; padding-left: 20px;">
-<h1 align="center" style="font-size: 3em;">ASTER</h1>
+<h1 align="center" style="font-size: 3em;">Aster</h1>
 </td>
 </tr>
 </table>
 </div>
 
-**Aster** is a Markdown editor built in Rust on top of [GPUI](https://www.gpui.rs/), the GPU-accelerated UI framework from the Zed team. It delivers a live split view: rope-backed editing on the left, formatted preview on the right. The goal is to create a fast and effiecient markdown editor using the gpu rendering. Why am I using `Rope` data structure; because it is fast and it provides several benefit over the regular `String`. If you want to learn more how, you can check out this brilliant article by the `Zed` team [Rope & SumTree](https://zed.dev/blog/zed-decoded-rope-sumtree). `Zed` uses their own version of `Rope` which isn't really a rope but a `SumTree`. Currenlty I am using the regular `Rope` and if there are needs, I might switch to the `Zed` version. Why `gpui`? Because it's GPU accelerated (Metal on MacOs) and it provides precise control over the layout and save us from the hell that is virtual DOM. 
+**Aster** is a Markdown editor built in Rust on top of [GPUI](https://www.gpui.rs/), the GPU-accelerated UI framework from the [Zed](https://zed.dev/) team. It delivers a live split view: rope-backed editing on the left, formatted preview on the right. The goal is to create a fast and effiecient markdown editor using the gpu rendering. Why am I using `Rope` data structure; because it is fast and it provides several benefit over the regular `String`. If you want to learn more how, you can check out this brilliant article by the `Zed` team [Rope & SumTree](https://zed.dev/blog/zed-decoded-rope-sumtree). `Zed` uses their own version of `Rope` which isn't really a rope but a `SumTree`. Currenlty I am using the regular `Rope` and if there are needs, I might switch to the `Zed` version. Why `gpui`? Because it's GPU accelerated (Metal on MacOs) and it provides precise control over the layout and save us from the hell that is virtual DOM. 
 
 
 ## Highlights
@@ -30,6 +30,16 @@
 ## Getting Started
 ```bash
 cargo run
+```
+
+Open a file on launch:
+```bash
+cargo run -- path/to/file.md
+```
+
+Build a macOS `.app` bundle (includes `.md` file association via `CFBundleDocumentTypes`):
+```bash
+cargo bundle --release
 ```
 
 Requirements: macOS with Metal toolchain installed (`xcode-select --install` or full Xcode).

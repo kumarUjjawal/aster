@@ -1,3 +1,4 @@
+use crate::commands::{Copy, Cut, Paste, SelectAll};
 use crate::model::document::DocumentState;
 use crate::ui::theme::Theme;
 use gpui::{
@@ -66,19 +67,24 @@ impl Focusable for EditorView {
 }
 
 impl Render for EditorView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.start_cursor_blink(cx);
         let focus_handle = self
             .focus_handle
-            .get_or_insert_with(|| cx.focus_handle())
+            .get_or_insert_with(|| {
+                let handle = cx.focus_handle();
+                handle.focus(window);
+                handle
+            })
             .clone();
+        let is_focused = focus_handle.is_focused(window);
         let doc = self.document.read(cx);
         let text_owned = doc.text();
         let cursor_byte = doc.char_to_byte(doc.cursor);
         let marker = "|";
         let marker_len = marker.len();
         let show_caret = doc.selection.is_none();
-        let show_caret_marker = show_caret && self.caret_visible;
+        let show_caret_marker = show_caret && is_focused && self.caret_visible;
 
         let mut display_text = text_owned.clone();
         if show_caret_marker {
@@ -118,6 +124,63 @@ impl Render for EditorView {
             .text_color(Theme::text())
             .font_family("Menlo")
             .track_focus(&focus_handle)
+            .on_action({
+                let doc_handle = self.document.clone();
+                move |_: &SelectAll, _window: &mut Window, cx_app: &mut App| {
+                    let _ = doc_handle.update(cx_app, |doc, cx| {
+                        doc.select_all();
+                        cx.notify();
+                    });
+                }
+            })
+            .on_action({
+                let doc_handle = self.document.clone();
+                move |_: &Copy, _window: &mut Window, cx_app: &mut App| {
+                    if let Some(selection) =
+                        doc_handle.read_with(cx_app, |d, _| d.selection_range())
+                    {
+                        let text = doc_handle.read_with(cx_app, |d, _| d.slice_chars(selection));
+                        cx_app.write_to_clipboard(ClipboardItem::new_string(text));
+                    }
+                }
+            })
+            .on_action({
+                let doc_handle = self.document.clone();
+                move |_: &Cut, _window: &mut Window, cx_app: &mut App| {
+                    let selection = doc_handle
+                        .read_with(cx_app, |d, _| d.selection_range())
+                        .unwrap_or_else(|| 0..0);
+                    if selection.start == selection.end {
+                        return;
+                    }
+
+                    let text =
+                        doc_handle.read_with(cx_app, |d, _| d.slice_chars(selection.clone()));
+                    cx_app.write_to_clipboard(ClipboardItem::new_string(text));
+                    let _ = doc_handle.update(cx_app, |doc, cx| {
+                        doc.delete_selection();
+                        cx.notify();
+                    });
+                }
+            })
+            .on_action({
+                let doc_handle = self.document.clone();
+                move |_: &Paste, _window: &mut Window, cx_app: &mut App| {
+                    let Some(item) = cx_app.read_from_clipboard() else {
+                        return;
+                    };
+                    let Some(text) = item.text() else {
+                        return;
+                    };
+                    let _ = doc_handle.update(cx_app, |doc, cx| {
+                        doc.delete_selection();
+                        let insert_at = doc.cursor;
+                        doc.insert(insert_at, &text);
+                        doc.cursor = insert_at.saturating_add(text.chars().count());
+                        cx.notify();
+                    });
+                }
+            })
             .on_mouse_down(MouseButton::Left, {
                 let focus_handle = focus_handle.clone();
                 let doc_handle = self.document.clone();
@@ -198,52 +261,6 @@ impl Render for EditorView {
                     let shift = modifiers.shift;
 
                     if is_cmd {
-                        match key.as_str() {
-                            "a" => {
-                                let _ = doc_handle.update(cx_app, |doc, cx| {
-                                    doc.select_all();
-                                    cx.notify();
-                                });
-                            }
-                            "c" => {
-                                if let Some(selection) =
-                                    doc_handle.read_with(cx_app, |d, _| d.selection_range())
-                                {
-                                    let text = doc_handle
-                                        .read_with(cx_app, |d, _| d.slice_chars(selection));
-                                    cx_app.write_to_clipboard(ClipboardItem::new_string(text));
-                                }
-                            }
-                            "x" => {
-                                let selection = doc_handle
-                                    .read_with(cx_app, |d, _| d.selection_range())
-                                    .unwrap_or_else(|| 0..0);
-                                if selection.start != selection.end {
-                                    let text = doc_handle
-                                        .read_with(cx_app, |d, _| d.slice_chars(selection.clone()));
-                                    cx_app.write_to_clipboard(ClipboardItem::new_string(text));
-                                    let _ = doc_handle.update(cx_app, |doc, cx| {
-                                        doc.delete_selection();
-                                        cx.notify();
-                                    });
-                                }
-                            }
-                            "v" => {
-                                if let Some(item) = cx_app.read_from_clipboard() {
-                                    if let Some(text) = item.text() {
-                                        let _ = doc_handle.update(cx_app, |doc, cx| {
-                                            doc.delete_selection();
-                                            let insert_at = doc.cursor;
-                                            doc.insert(insert_at, &text);
-                                            doc.cursor =
-                                                insert_at.saturating_add(text.chars().count());
-                                            cx.notify();
-                                        });
-                                    }
-                                }
-                            }
-                            _ => {}
-                        }
                         return;
                     }
                     let _ = doc_handle.update(cx_app, |doc, cx_doc| {

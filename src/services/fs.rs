@@ -15,7 +15,12 @@ pub fn pick_open_path() -> Option<Utf8PathBuf> {
 pub fn pick_save_path(default: Option<&Utf8PathBuf>) -> Option<Utf8PathBuf> {
     let mut dialog = FileDialog::new().add_filter("Markdown", &["md", "markdown", "mdown"]);
     if let Some(path) = default {
+        if let Some(parent) = path.parent() {
+            dialog = dialog.set_directory(parent.as_std_path());
+        }
         dialog = dialog.set_file_name(path.file_name().unwrap_or("untitled.md"));
+    } else {
+        dialog = dialog.set_file_name("untitled.md");
     }
     dialog
         .save_file()
