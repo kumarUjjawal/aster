@@ -177,9 +177,20 @@ fn build_root_view(
 ) -> gpui::Entity<RootView> {
     let document = cx.new(|_| RootView::new_document());
     let preview = cx.new(|_| RootView::new_preview());
+    let file_tree = cx.new(|_| RootView::new_file_tree());
     let notifications = cx.new(|cx| NotificationList::new(window, cx));
     let editor_view = cx.new(|_| RootView::build_editor(document.clone()));
     let preview_view = cx.new(|_| RootView::build_preview(preview.clone()));
+    let file_explorer_view = cx.new(|_| RootView::build_file_explorer(file_tree.clone()));
+
+    // Initialize file tree with current working directory
+    if let Ok(cwd) = std::env::current_dir() {
+        if let Ok(utf8_cwd) = Utf8PathBuf::try_from(cwd) {
+            let _ = file_tree.update(cx, |tree, cx| {
+                tree.set_root(utf8_cwd, cx);
+            });
+        }
+    }
 
     if let Some(path) = initial_path.as_ref() {
         if let Ok(text) = read_to_string(path) {
@@ -193,7 +204,7 @@ fn build_root_view(
     }
 
     install_should_close_prompt(window, cx, document.clone());
-    cx.new(|_| RootView::new(document, preview, editor_view, preview_view, notifications))
+    cx.new(|_| RootView::new(document, preview, file_tree, editor_view, preview_view, file_explorer_view, notifications))
 }
 
 fn install_should_close_prompt(

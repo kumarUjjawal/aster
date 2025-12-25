@@ -1,10 +1,12 @@
 use crate::commands::{CloseWindow, NewFile, OpenFile, SaveFile, SaveFileAs};
 use crate::model::document::DocumentState;
+use crate::model::file_tree::FileTreeState;
 use crate::model::preview::PreviewState;
 use crate::services::fs::{pick_open_path, pick_save_path, read_to_string, write_atomic};
 use crate::services::markdown::render_blocks;
 use crate::services::tasks::Debouncer;
 use crate::ui::editor::EditorView;
+use crate::ui::file_explorer::FileExplorerView;
 use crate::ui::preview::PreviewView;
 use crate::ui::theme::Theme;
 use crate::ui::widgets::tag;
@@ -28,8 +30,10 @@ enum ViewMode {
 pub struct RootView {
     document: Entity<DocumentState>,
     preview: Entity<PreviewState>,
+    file_tree: Entity<FileTreeState>,
     editor_view: Entity<crate::ui::editor::EditorView>,
     preview_view: Entity<crate::ui::preview::PreviewView>,
+    file_explorer_view: Entity<crate::ui::file_explorer::FileExplorerView>,
     notifications: Entity<NotificationList>,
     preview_debounce: Debouncer<RootView>,
     view_mode: ViewMode,
@@ -39,15 +43,19 @@ impl RootView {
     pub fn new(
         document: Entity<DocumentState>,
         preview: Entity<PreviewState>,
+        file_tree: Entity<FileTreeState>,
         editor_view: Entity<crate::ui::editor::EditorView>,
         preview_view: Entity<crate::ui::preview::PreviewView>,
+        file_explorer_view: Entity<crate::ui::file_explorer::FileExplorerView>,
         notifications: Entity<NotificationList>,
     ) -> Self {
         Self {
             document,
             preview,
+            file_tree,
             editor_view,
             preview_view,
+            file_explorer_view,
             notifications,
             preview_debounce: Debouncer::new(Duration::from_millis(120)),
             view_mode: ViewMode::Split,
@@ -68,6 +76,14 @@ impl RootView {
 
     pub fn build_preview(preview: Entity<PreviewState>) -> crate::ui::preview::PreviewView {
         PreviewView::new(preview)
+    }
+
+    pub fn new_file_tree() -> FileTreeState {
+        FileTreeState::new()
+    }
+
+    pub fn build_file_explorer(file_tree: Entity<FileTreeState>) -> crate::ui::file_explorer::FileExplorerView {
+        FileExplorerView::new(file_tree)
     }
 
     fn save_document(
@@ -268,6 +284,11 @@ impl RootView {
 
 impl Render for RootView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Check if file explorer has a pending file to open
+        if let Some(path) = self.file_tree.update(cx, |tree, _| tree.take_pending_open()) {
+            self.open_path(&path, window, cx);
+        }
+
         let doc_info = {
             let doc = self.document.read(cx);
             let cursor = doc.cursor.min(doc.rope.len_chars());
@@ -415,6 +436,7 @@ impl Render for RootView {
             .flex_row()
             .flex_1()
             .min_h(px(0.))
+            .min_w(px(0.))
             .when(self.view_mode != ViewMode::Preview, |this| {
                 this.child(self.editor_view.clone())
             })
@@ -482,10 +504,20 @@ impl Render for RootView {
                 div()
                     .flex_1()
                     .min_h(px(0.))
+                    .min_w(px(0.))
                     .flex()
-                    .flex_col()
-                    .p(px(16.))
-                    .child(split_view),
+                    .flex_row()
+                    .child(self.file_explorer_view.clone())
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_h(px(0.))
+                            .min_w(px(0.))
+                            .flex()
+                            .flex_col()
+                            .p(px(16.))
+                            .child(split_view),
+                    ),
             )
             .child(bottom_bar)
             .child(self.notifications.clone())
