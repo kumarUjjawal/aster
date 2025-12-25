@@ -1,4 +1,4 @@
-use gpui::{rgb, Rgba};
+use gpui::{rgb, rgba, Rgba};
 
 pub struct Theme;
 
@@ -23,6 +23,9 @@ impl Theme {
     }
     pub fn accent() -> Rgba {
         rgb(0x2d7fd2)
+    }
+    pub fn selection_bg() -> Rgba {
+        rgba(0x2d7fd233) // accent with low alpha for text selection
     }
     pub fn warn() -> Rgba {
         rgb(0xffb347)
