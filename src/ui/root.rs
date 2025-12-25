@@ -52,7 +52,7 @@ impl RootView {
 }
 
 impl Render for RootView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl gpui::IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl gpui::IntoElement {
         let doc_info = {
             let doc = self.document.read(cx);
             (
@@ -91,12 +91,17 @@ impl Render for RootView {
         } else {
             tag("saved", Theme::muted())
         };
+        let bounds = window.bounds();
+        let w: f32 = bounds.size.width.into();
+        let h: f32 = bounds.size.height.into();
 
         div()
             .flex()
             .flex_col()
             .bg(Theme::bg())
             .text_color(Theme::text())
+            .w(px(w))
+            .h(px(h))
             .on_key_down({
                 let doc = self.document.clone();
                 move |event: &KeyDownEvent, _window: &mut Window, cx_app: &mut gpui::App| {
@@ -148,6 +153,7 @@ impl Render for RootView {
             )
             .child(
                 div()
+                    .flex_grow()
                     .flex()
                     .flex_row()
                     .gap_3()
