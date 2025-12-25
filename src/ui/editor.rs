@@ -1,8 +1,8 @@
 use crate::model::document::DocumentState;
 use crate::ui::theme::Theme;
 use gpui::{
-    div, px, App, Context, Entity, FocusHandle, Focusable, InteractiveElement, KeyDownEvent,
-    MouseButton, MouseDownEvent, ParentElement, Render, SharedString, Styled, Window,
+    div, px, App, Context, Entity, FocusHandle, Focusable, InteractiveElement, IntoElement,
+    KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Render, SharedString, Styled, Window,
 };
 
 pub struct EditorView {
@@ -28,7 +28,7 @@ impl Focusable for EditorView {
 }
 
 impl Render for EditorView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl gpui::IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let focus_handle = self
             .focus_handle
             .get_or_insert_with(|| cx.focus_handle())
@@ -63,14 +63,14 @@ impl Render for EditorView {
             .track_focus(&focus_handle)
             .on_mouse_down(MouseButton::Left, {
                 let focus_handle = focus_handle.clone();
-                move |_: &MouseDownEvent, window: &mut Window, _app: &mut gpui::App| {
+                move |_: &MouseDownEvent, window: &mut Window, _app: &mut App| {
                     focus_handle.focus(window);
                 }
             })
             .on_key_down({
                 let focus = focus_handle.clone();
                 let doc_handle = self.document.clone();
-                move |event: &KeyDownEvent, window: &mut Window, cx_app: &mut gpui::App| {
+                move |event: &KeyDownEvent, window: &mut Window, cx_app: &mut App| {
                     if !focus.is_focused(window) {
                         return;
                     }

@@ -1,8 +1,7 @@
 <p align="center">
-  <img src="./logo.png" alt="Aster logo" width="120">
+  <img src="./logo.png" alt="Aster logo" width="160" style="vertical-align: middle; margin-right: 12px;">
+  <span style="font-size: 28px; font-weight: 700; vertical-align: middle;">Aster</span>
 </p>
-
-# Aster
 
 **Aster** is a macOS-first Markdown editor built in Rust on top of [GPUI](https://www.gpui.rs/), the GPU-accelerated UI framework from the Zed team. It delivers a live split view: rope-backed editing on the left, formatted preview on the right.
 

@@ -7,7 +7,10 @@ use crate::ui::editor::EditorView;
 use crate::ui::preview::PreviewView;
 use crate::ui::theme::Theme;
 use crate::ui::widgets::tag;
-use gpui::{div, px, Context, Entity, InteractiveElement, KeyDownEvent, ParentElement, Render, Styled, Window};
+use gpui::{
+    div, px, App, Context, Entity, InteractiveElement, IntoElement, KeyDownEvent, ParentElement,
+    Render, Styled, Window,
+};
 use std::time::Duration;
 
 pub struct RootView {
@@ -52,7 +55,7 @@ impl RootView {
 }
 
 impl Render for RootView {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl gpui::IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let doc_info = {
             let doc = self.document.read(cx);
             (
@@ -104,7 +107,7 @@ impl Render for RootView {
             .h(px(h))
             .on_key_down({
                 let doc = self.document.clone();
-                move |event: &KeyDownEvent, _window: &mut Window, cx_app: &mut gpui::App| {
+                move |event: &KeyDownEvent, _window: &mut Window, cx_app: &mut App| {
                     let ks = &event.keystroke;
                     let key = ks.key.to_lowercase();
                     let is_cmd = ks.modifiers.platform || ks.modifiers.control;
