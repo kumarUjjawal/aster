@@ -11,9 +11,9 @@ use crate::ui::widgets::tag;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     Context, Entity, InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement,
-    Render, Styled, Window, div, px,
+    Render, Styled, Window, div, px, svg,
 };
-use gpui_component::IconName;
+use gpui_component::{IconName, IconNamed};
 use gpui_component::notification::{Notification, NotificationList};
 use rfd::{MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
 use std::time::Duration;
@@ -375,7 +375,12 @@ impl Render for RootView {
                         cx.notify();
                     }),
                 )
-                .child(icon)
+                .child(
+                    svg()
+                        .path(icon.path())
+                        .size_4()
+                        .text_color(if selected { Theme::text() } else { Theme::muted() })
+                )
         };
 
         let view_controls = div()
