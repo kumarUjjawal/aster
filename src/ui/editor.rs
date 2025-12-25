@@ -3,7 +3,7 @@ use crate::ui::theme::Theme;
 use gpui::{
     App, ClipboardItem, Context, Entity, FocusHandle, Focusable, HighlightStyle,
     InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent,
-    ParentElement, Pixels, Point, Render, Styled, StyledText, Window, div, px,
+    ParentElement, Render, Styled, StyledText, Window, div, px,
 };
 use std::ops::Range;
 use std::panic::AssertUnwindSafe;
@@ -14,9 +14,6 @@ pub struct EditorView {
     focus_handle: Option<FocusHandle>,
     caret_visible: bool,
     blink_task: Option<gpui::Task<()>>,
-    text_layout: Option<gpui::TextLayout>,
-    layout_ready: bool,
-    last_revision: u64,
 }
 
 impl EditorView {
@@ -26,9 +23,6 @@ impl EditorView {
             focus_handle: None,
             caret_visible: true,
             blink_task: None,
-            text_layout: None,
-            layout_ready: false,
-            last_revision: 0,
         }
     }
 
@@ -61,18 +55,6 @@ impl EditorView {
             )]
         })
     }
-
-    fn caret_position(&self, byte_idx: usize) -> Option<Point<Pixels>> {
-        let layout = self.text_layout.as_ref()?;
-        std::panic::catch_unwind(AssertUnwindSafe(|| layout.position_for_index(byte_idx)))
-            .ok()
-            .flatten()
-    }
-
-    fn line_height(&self) -> Option<Pixels> {
-        let layout = self.text_layout.as_ref()?;
-        std::panic::catch_unwind(AssertUnwindSafe(|| layout.line_height())).ok()
-    }
 }
 
 impl Focusable for EditorView {
@@ -93,20 +75,36 @@ impl Render for EditorView {
         let doc = self.document.read(cx);
         let text_owned = doc.text();
         let cursor_byte = doc.char_to_byte(doc.cursor);
-        let highlights = self.selection_highlights(&doc);
-        let mut styled = StyledText::new(text_owned.clone());
+        let marker = "|";
+        let marker_len = marker.len();
+        let show_caret = doc.selection.is_none();
+        let show_caret_marker = show_caret && self.caret_visible;
+
+        let mut display_text = text_owned.clone();
+        if show_caret_marker {
+            if cursor_byte <= display_text.len() {
+                display_text.insert_str(cursor_byte, marker);
+            } else {
+                display_text.push_str(marker);
+            }
+        }
+
+        let mut highlights = self.selection_highlights(&doc);
+        if show_caret_marker {
+            highlights.push((
+                cursor_byte..cursor_byte.saturating_add(marker_len),
+                HighlightStyle {
+                    color: Some(Theme::accent().into()),
+                    ..Default::default()
+                },
+            ));
+        }
+
+        let mut styled = StyledText::new(display_text);
         if !highlights.is_empty() {
             styled = styled.with_highlights(highlights);
         }
         let text_layout = styled.layout().clone();
-        self.text_layout = Some(text_layout.clone());
-        let layout_ready = self.layout_ready && self.last_revision == doc.revision;
-        self.last_revision = doc.revision;
-        if !layout_ready {
-            // Mark ready for the next render; avoids touching the layout before gpui measures it.
-            self.layout_ready = true;
-            cx.notify();
-        }
 
         div()
             .relative()
@@ -124,12 +122,10 @@ impl Render for EditorView {
                 let focus_handle = focus_handle.clone();
                 let doc_handle = self.document.clone();
                 let layout_for_event = text_layout.clone();
-                let layout_ready = layout_ready;
+                let show_caret_marker = show_caret_marker;
+                let cursor_byte = cursor_byte;
                 move |event: &MouseDownEvent, window: &mut Window, cx_app: &mut App| {
                     focus_handle.focus(window);
-                    if !layout_ready {
-                        return;
-                    }
                     let _ = doc_handle.update(cx_app, |doc, cx| {
                         let byte_idx = std::panic::catch_unwind(AssertUnwindSafe(|| {
                             layout_for_event.index_for_position(event.position)
@@ -138,6 +134,12 @@ impl Render for EditorView {
                         .map(|res| match res {
                             Ok(ix) => ix,
                             Err(ix) => ix,
+                        });
+                        let byte_idx = byte_idx.map(|mut b| {
+                            if show_caret_marker && b > cursor_byte {
+                                b = b.saturating_sub(marker_len);
+                            }
+                            b
                         });
                         if let Some(byte_idx) = byte_idx.map(|b| doc.byte_to_char(b)) {
                             if event.modifiers.shift {
@@ -154,12 +156,10 @@ impl Render for EditorView {
             .on_mouse_move({
                 let doc_handle = self.document.clone();
                 let layout_for_event = text_layout.clone();
-                let layout_ready = layout_ready;
+                let show_caret_marker = show_caret_marker;
+                let cursor_byte = cursor_byte;
                 move |event: &MouseMoveEvent, _window: &mut Window, cx_app: &mut App| {
                     if !event.dragging() {
-                        return;
-                    }
-                    if !layout_ready {
                         return;
                     }
                     let _ = doc_handle.update(cx_app, |doc, cx| {
@@ -170,6 +170,12 @@ impl Render for EditorView {
                         .map(|res| match res {
                             Ok(ix) => ix,
                             Err(ix) => ix,
+                        });
+                        let byte_idx = byte_idx.map(|mut b| {
+                            if show_caret_marker && b > cursor_byte {
+                                b = b.saturating_sub(marker_len);
+                            }
+                            b
                         });
                         if let Some(byte_idx) = byte_idx.map(|b| doc.byte_to_char(b)) {
                             let anchor = doc.selection_anchor.unwrap_or(doc.cursor);
@@ -320,33 +326,7 @@ impl Render for EditorView {
                     });
                 }
             })
-            .child(
-                div()
-                    .whitespace_normal()
-                    .child(styled)
-                    .child(if layout_ready {
-                        std::panic::catch_unwind(AssertUnwindSafe(|| {
-                            let maybe_pos = self
-                                .caret_visible
-                                .then(|| self.caret_position(cursor_byte))
-                                .flatten();
-                            if let (Some(pos), Some(height)) = (maybe_pos, self.line_height()) {
-                                div()
-                                    .absolute()
-                                    .left(pos.x)
-                                    .top(pos.y)
-                                    .w(px(1.))
-                                    .h(height)
-                                    .bg(Theme::accent())
-                            } else {
-                                div().hidden()
-                            }
-                        }))
-                        .unwrap_or_else(|_| div().hidden())
-                    } else {
-                        div().hidden()
-                    }),
-            )
+            .child(div().whitespace_normal().child(styled))
     }
 }
 
