@@ -4,7 +4,8 @@ use crate::ui::theme::Theme;
 use gpui::{
     App, ClipboardItem, Context, Entity, FocusHandle, Focusable, HighlightStyle,
     InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent,
-    ParentElement, Render, Styled, StyledText, Window, div, px,
+    ParentElement, Render, ScrollHandle, StatefulInteractiveElement, Styled, StyledText, Window,
+    div, point, px,
 };
 use std::ops::Range;
 use std::panic::AssertUnwindSafe;
@@ -15,6 +16,7 @@ pub struct EditorView {
     focus_handle: Option<FocusHandle>,
     caret_visible: bool,
     blink_task: Option<gpui::Task<()>>,
+    scroll_handle: ScrollHandle,
 }
 
 impl EditorView {
@@ -24,6 +26,7 @@ impl EditorView {
             focus_handle: None,
             caret_visible: true,
             blink_task: None,
+            scroll_handle: ScrollHandle::new(),
         }
     }
 
@@ -111,11 +114,14 @@ impl Render for EditorView {
             styled = styled.with_highlights(highlights);
         }
         let text_layout = styled.layout().clone();
+        let scroll_handle = self.scroll_handle.clone();
 
         div()
+            .id("editor_scroll")
             .relative()
-            .flex_grow()
-            .min_w(px(360.))
+            .flex_1()
+            .min_w(px(0.))
+            .min_h(px(0.))
             .bg(Theme::panel())
             .border_1()
             .border_color(Theme::border())
@@ -123,6 +129,9 @@ impl Render for EditorView {
             .text_sm()
             .text_color(Theme::text())
             .font_family("Menlo")
+            .overflow_scroll()
+            .scrollbar_width(px(10.))
+            .track_scroll(&self.scroll_handle)
             .track_focus(&focus_handle)
             .on_action({
                 let doc_handle = self.document.clone();
@@ -251,6 +260,7 @@ impl Render for EditorView {
             .on_key_down({
                 let focus = focus_handle.clone();
                 let doc_handle = self.document.clone();
+                let scroll_handle = scroll_handle.clone();
                 move |event: &KeyDownEvent, window: &mut Window, cx_app: &mut App| {
                     if !focus.is_focused(window) {
                         return;
@@ -261,6 +271,30 @@ impl Render for EditorView {
                     let shift = modifiers.shift;
 
                     if is_cmd {
+                        return;
+                    }
+
+                    if key == "pageup" || key == "pagedown" {
+                        let max = scroll_handle.max_offset();
+                        let offset = scroll_handle.offset();
+                        let bounds = scroll_handle.bounds();
+                        let page = if shift {
+                            bounds.size.width
+                        } else {
+                            bounds.size.height
+                        };
+                        if page > px(0.) {
+                            let amount = page * 0.9;
+                            let delta = if key == "pagedown" { -amount } else { amount };
+                            let mut new_offset = offset;
+                            if shift {
+                                new_offset.x = (new_offset.x + delta).clamp(-max.width, px(0.));
+                            } else {
+                                new_offset.y = (new_offset.y + delta).clamp(-max.height, px(0.));
+                            }
+                            scroll_handle.set_offset(point(new_offset.x, new_offset.y));
+                            window.refresh();
+                        }
                         return;
                     }
                     let _ = doc_handle.update(cx_app, |doc, cx_doc| {
@@ -343,7 +377,14 @@ impl Render for EditorView {
                     });
                 }
             })
-            .child(div().whitespace_normal().child(styled))
+            .child(
+                div()
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .whitespace_nowrap()
+                    .child(styled),
+            )
     }
 }
 

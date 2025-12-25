@@ -2,37 +2,106 @@ use crate::model::preview::PreviewState;
 use crate::services::markdown::{Block, InlineRun};
 use crate::ui::theme::Theme;
 use gpui::{
-    Context, Entity, FontWeight, IntoElement, ParentElement, Render, SharedString, Styled, Window,
-    div, px,
+    App, Context, Entity, FocusHandle, FontWeight, InteractiveElement, IntoElement, KeyDownEvent,
+    MouseButton, MouseDownEvent, ParentElement, Render, ScrollHandle, SharedString,
+    StatefulInteractiveElement, Styled, Window, div, point, px,
 };
 
 pub struct PreviewView {
     preview: Entity<PreviewState>,
+    focus_handle: Option<FocusHandle>,
+    scroll_handle: ScrollHandle,
 }
 
 impl PreviewView {
     pub fn new(preview: Entity<PreviewState>) -> Self {
-        Self { preview }
+        Self {
+            preview,
+            focus_handle: None,
+            scroll_handle: ScrollHandle::new(),
+        }
     }
 }
 
 impl Render for PreviewView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let blocks = self.preview.read(cx).blocks.clone();
+        let focus_handle = self
+            .focus_handle
+            .get_or_insert_with(|| cx.focus_handle())
+            .clone();
+        let scroll_handle = self.scroll_handle.clone();
+
         div()
-            .flex_grow()
-            .min_w(px(320.))
+            .id("preview_scroll")
+            .flex_1()
+            .min_w(px(0.))
+            .min_h(px(0.))
             .bg(Theme::panel_alt())
             .border_1()
             .border_color(Theme::border())
             .p(px(18.))
             .text_sm()
             .text_color(Theme::text())
-            .overflow_hidden()
+            .overflow_scroll()
+            .scrollbar_width(px(10.))
+            .track_scroll(&self.scroll_handle)
+            .track_focus(&focus_handle)
+            .on_mouse_down(MouseButton::Left, {
+                let focus_handle = focus_handle.clone();
+                move |_: &MouseDownEvent, window: &mut Window, _cx: &mut App| {
+                    focus_handle.focus(window);
+                }
+            })
+            .on_key_down({
+                let focus_handle = focus_handle.clone();
+                let scroll_handle = scroll_handle.clone();
+                move |event: &KeyDownEvent, window: &mut Window, _cx: &mut App| {
+                    if !focus_handle.is_focused(window) {
+                        return;
+                    }
+
+                    let key = event.keystroke.key.to_lowercase();
+                    let modifiers = event.keystroke.modifiers;
+                    let is_cmd = modifiers.platform || modifiers.control;
+                    let shift = modifiers.shift;
+
+                    if is_cmd {
+                        return;
+                    }
+
+                    if key == "pageup" || key == "pagedown" {
+                        let max = scroll_handle.max_offset();
+                        let offset = scroll_handle.offset();
+                        let bounds = scroll_handle.bounds();
+                        let page = if shift {
+                            bounds.size.width
+                        } else {
+                            bounds.size.height
+                        };
+                        if page > px(0.) {
+                            let amount = page * 0.9;
+                            let delta = if key == "pagedown" { -amount } else { amount };
+                            let mut new_offset = offset;
+                            if shift {
+                                new_offset.x = (new_offset.x + delta).clamp(-max.width, px(0.));
+                            } else {
+                                new_offset.y = (new_offset.y + delta).clamp(-max.height, px(0.));
+                            }
+                            scroll_handle.set_offset(point(new_offset.x, new_offset.y));
+                            window.refresh();
+                        }
+                    }
+                }
+            })
             .child(
                 div()
+                    .absolute()
+                    .top_0()
+                    .left_0()
                     .flex()
                     .flex_col()
+                    .items_start()
                     .gap_3()
                     .children(blocks.into_iter().map(render_block)),
             )
@@ -68,6 +137,7 @@ fn render_block(block: Block) -> impl IntoElement {
             .child(render_inline_runs(runs)),
         Block::CodeBlock(text) => div()
             .font_family("Menlo")
+            .whitespace_nowrap()
             .bg(Theme::border())
             .p(px(10.))
             .rounded(px(4.))
