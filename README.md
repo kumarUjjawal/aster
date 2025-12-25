@@ -1,11 +1,10 @@
 <div align="center">
-<table border="0" cellspacing="0" cellpadding="0" style="border: none;">
 <tr style="border: none;">
 <td width="180px" style="border: none;">
 <img src="./logo.png" alt="Aster logo" width="160"/>
 </td>
 <td style="border: none; padding-left: 20px;">
-<h1 style="margin: 0;">Aster</h1>
+<h1 align="center" style="font-size: 3em;">ASTER</h1>
 </td>
 </tr>
 </table>
