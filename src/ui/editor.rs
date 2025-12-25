@@ -28,17 +28,17 @@ impl Focusable for EditorView {
 }
 
 impl Render for EditorView {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl gpui::IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl gpui::IntoElement {
         let focus_handle = self
             .focus_handle
             .get_or_insert_with(|| cx.focus_handle())
             .clone();
-        let text_owned = self.document.read(cx).text();
-        let display = if text_owned.is_empty() {
-            SharedString::from("Start typing Markdown...")
-        } else {
-            SharedString::from(text_owned.clone())
-        };
+        let doc = self.document.read(cx);
+        let mut text_owned = doc.text();
+        let cursor_pos = doc.cursor.min(text_owned.len());
+        text_owned.insert(cursor_pos, '|');
+        let _ = doc;
+        let display = SharedString::from(text_owned);
 
         div()
             .flex_grow()
@@ -86,6 +86,11 @@ impl Render for EditorView {
                                     cx_doc.notify();
                                 }
                             }
+                            "enter" | "return" => {
+                                doc.insert(doc.cursor, "\n");
+                                doc.cursor += 1;
+                                cx_doc.notify();
+                            }
                             "left" | "arrowleft" => {
                                 if doc.cursor > 0 {
                                     doc.cursor -= 1;
@@ -108,6 +113,12 @@ impl Render for EditorView {
                                     doc.cursor =
                                         (doc.cursor).saturating_add(insert.chars().count());
                                     cx_doc.notify();
+                                } else if let Some(raw) = &event.keystroke.key_char {
+                                    if raw == "\n" {
+                                        doc.insert(doc.cursor, "\n");
+                                        doc.cursor += 1;
+                                        cx_doc.notify();
+                                    }
                                 }
                             }
                         }

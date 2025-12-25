@@ -21,9 +21,6 @@ impl Theme {
     pub fn muted() -> Rgba {
         rgb(0x9a9a9a)
     }
-    pub fn accent() -> Rgba {
-        rgb(0x4e9cff)
-    }
     pub fn warn() -> Rgba {
         rgb(0xffb347)
     }

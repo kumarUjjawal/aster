@@ -1,13 +1,13 @@
 use crate::model::document::DocumentState;
 use crate::model::preview::PreviewState;
 use crate::services::fs::{pick_open_path, pick_save_path, read_to_string, write_atomic};
-use crate::services::markdown::render_html;
+use crate::services::markdown::render_blocks;
 use crate::services::tasks::Debouncer;
 use crate::ui::editor::EditorView;
 use crate::ui::preview::PreviewView;
 use crate::ui::theme::Theme;
 use crate::ui::widgets::tag;
-use gpui::{div, px, Context, Entity, InteractiveElement, KeyDownEvent, ParentElement, Render, SharedString, Styled, Window};
+use gpui::{div, px, Context, Entity, InteractiveElement, KeyDownEvent, ParentElement, Render, Styled, Window};
 use std::time::Duration;
 
 pub struct RootView {
@@ -52,7 +52,7 @@ impl RootView {
 }
 
 impl Render for RootView {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl gpui::IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl gpui::IntoElement {
         let doc_info = {
             let doc = self.document.read(cx);
             (
@@ -66,14 +66,13 @@ impl Render for RootView {
 
         if doc_info.2 != preview_rev {
             let text = doc_info.3.clone();
-            let html = render_html(&text).unwrap_or_else(|_| text.clone());
+            let blocks = render_blocks(&text);
             let preview = self.preview.clone();
             let target_rev = doc_info.2;
             self.preview_debounce.schedule(cx, move |_, cx| {
-                let html_str = SharedString::from(html.clone());
                 preview.update(cx, |p, cx| {
                     if target_rev >= p.source_revision {
-                        p.rendered = html_str.clone();
+                        p.blocks = blocks.clone();
                         p.source_revision = target_rev;
                         cx.notify();
                     }
