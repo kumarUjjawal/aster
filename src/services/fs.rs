@@ -31,7 +31,8 @@ pub fn write_atomic(path: &Utf8PathBuf, contents: &str) -> AppResult<()> {
         path.parent()
             .and_then(|p| Utf8PathBuf::try_from(p.to_path_buf()).ok())
             .unwrap_or_else(|| {
-                Utf8PathBuf::try_from(std::env::temp_dir()).unwrap_or_else(|_| Utf8PathBuf::from("tmp"))
+                Utf8PathBuf::try_from(std::env::temp_dir())
+                    .unwrap_or_else(|_| Utf8PathBuf::from("tmp"))
             }),
     )?;
     tmp.write_all(contents.as_bytes())?;

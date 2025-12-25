@@ -1,8 +1,8 @@
 use camino::Utf8PathBuf;
 use ropey::Rope;
+use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::ops::Range;
-use std::{collections::hash_map::DefaultHasher};
 
 #[derive(Clone)]
 pub struct DocumentState {
@@ -52,7 +52,11 @@ impl DocumentState {
     }
 
     pub fn set_selection(&mut self, start: usize, end: usize) {
-        let (start, end) = if start <= end { (start, end) } else { (end, start) };
+        let (start, end) = if start <= end {
+            (start, end)
+        } else {
+            (end, start)
+        };
         self.selection = if start == end {
             None
         } else {

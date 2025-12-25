@@ -1,9 +1,9 @@
 use crate::model::document::DocumentState;
 use crate::ui::theme::Theme;
 use gpui::{
-    div, px, App, ClipboardItem, Context, Entity, FocusHandle, Focusable, HighlightStyle,
+    App, ClipboardItem, Context, Entity, FocusHandle, Focusable, HighlightStyle,
     InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent,
-    ParentElement, Pixels, Point, Render, Styled, StyledText, Window,
+    ParentElement, Pixels, Point, Render, Styled, StyledText, Window, div, px,
 };
 use std::ops::Range;
 use std::panic::AssertUnwindSafe;
@@ -37,14 +37,16 @@ impl EditorView {
             return;
         }
         let entity = cx.entity();
-        self.blink_task = Some(cx.spawn(async move |_editor, cx| loop {
-            cx.background_executor()
-                .timer(Duration::from_millis(500))
-                .await;
-            let _ = entity.update(cx, |view, cx| {
-                view.caret_visible = !view.caret_visible;
-                cx.notify();
-            });
+        self.blink_task = Some(cx.spawn(async move |_editor, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_millis(500))
+                    .await;
+                let _ = entity.update(cx, |view, cx| {
+                    view.caret_visible = !view.caret_visible;
+                    cx.notify();
+                });
+            }
         }));
     }
 
@@ -137,8 +139,7 @@ impl Render for EditorView {
                             Ok(ix) => ix,
                             Err(ix) => ix,
                         });
-                        if let Some(byte_idx) = byte_idx.map(|b| doc.byte_to_char(b))
-                        {
+                        if let Some(byte_idx) = byte_idx.map(|b| doc.byte_to_char(b)) {
                             if event.modifiers.shift {
                                 let anchor = doc.selection_anchor.unwrap_or(doc.cursor);
                                 doc.set_selection(anchor, byte_idx);
@@ -170,8 +171,7 @@ impl Render for EditorView {
                             Ok(ix) => ix,
                             Err(ix) => ix,
                         });
-                        if let Some(byte_idx) = byte_idx.map(|b| doc.byte_to_char(b))
-                        {
+                        if let Some(byte_idx) = byte_idx.map(|b| doc.byte_to_char(b)) {
                             let anchor = doc.selection_anchor.unwrap_or(doc.cursor);
                             doc.set_selection(anchor, byte_idx);
                             cx.notify();
@@ -331,11 +331,11 @@ impl Render for EditorView {
                                 .then(|| self.caret_position(cursor_byte))
                                 .flatten();
                             if let (Some(pos), Some(height)) = (maybe_pos, self.line_height()) {
-                        div()
-                            .absolute()
-                            .left(pos.x)
-                            .top(pos.y)
-                            .w(px(1.))
+                                div()
+                                    .absolute()
+                                    .left(pos.x)
+                                    .top(pos.y)
+                                    .w(px(1.))
                                     .h(height)
                                     .bg(Theme::accent())
                             } else {

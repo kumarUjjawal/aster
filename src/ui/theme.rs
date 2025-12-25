@@ -1,4 +1,4 @@
-use gpui::{rgb, rgba, Rgba};
+use gpui::{Rgba, rgb, rgba};
 
 pub struct Theme;
 

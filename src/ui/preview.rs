@@ -2,8 +2,8 @@ use crate::model::preview::PreviewState;
 use crate::services::markdown::{Block, InlineRun};
 use crate::ui::theme::Theme;
 use gpui::{
-    div, px, Context, Entity, FontWeight, IntoElement, ParentElement, Render, SharedString, Styled,
-    Window,
+    Context, Entity, FontWeight, IntoElement, ParentElement, Render, SharedString, Styled, Window,
+    div, px,
 };
 
 pub struct PreviewView {
@@ -44,9 +44,18 @@ fn render_block(block: Block) -> impl IntoElement {
         Block::Heading(level, runs) => {
             let mut el = div().text_color(Theme::text());
             el = match level {
-                1 => el.text_2xl().font_weight(FontWeight::BOLD).text_color(Theme::accent()),
-                2 => el.text_xl().font_weight(FontWeight::BOLD).text_color(Theme::accent()),
-                _ => el.text_lg().font_weight(FontWeight::BOLD).text_color(Theme::accent()),
+                1 => el
+                    .text_2xl()
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(Theme::accent()),
+                2 => el
+                    .text_xl()
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(Theme::accent()),
+                _ => el
+                    .text_lg()
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(Theme::accent()),
             };
             el.child(render_inline_runs(runs))
         }
@@ -78,13 +87,17 @@ fn render_block(block: Block) -> impl IntoElement {
 
 fn render_inline_runs(runs: Vec<InlineRun>) -> impl IntoElement {
     let lines = split_runs(runs);
-    div().flex().flex_col().gap_1().children(lines.into_iter().map(|line| {
-        div()
-            .flex()
-            .flex_row()
-            .gap_1()
-            .children(line.into_iter().map(render_inline_run))
-    }))
+    div()
+        .flex()
+        .flex_col()
+        .gap_1()
+        .children(lines.into_iter().map(|line| {
+            div()
+                .flex()
+                .flex_row()
+                .gap_1()
+                .children(line.into_iter().map(render_inline_run))
+        }))
 }
 
 fn render_inline_run(r: InlineRun) -> impl IntoElement {

@@ -46,20 +46,19 @@ pub fn render_blocks(source: &str) -> Vec<Block> {
     let mut in_list_item = false;
     let mut code_block: Option<String> = None;
 
-    let push_runs_as =
-        |target: &mut Vec<Block>, runs: &mut Vec<InlineRun>, kind: BlockKind| {
-            if runs.is_empty() {
-                return;
-            }
-            let block = match kind {
-                BlockKind::Paragraph => Block::Paragraph(runs.clone()),
-                BlockKind::Heading(level) => Block::Heading(level, runs.clone()),
-                BlockKind::ListItem => Block::ListItem(runs.clone()),
-                BlockKind::Quote => Block::Quote(runs.clone()),
-            };
-            target.push(block);
-            runs.clear();
+    let push_runs_as = |target: &mut Vec<Block>, runs: &mut Vec<InlineRun>, kind: BlockKind| {
+        if runs.is_empty() {
+            return;
+        }
+        let block = match kind {
+            BlockKind::Paragraph => Block::Paragraph(runs.clone()),
+            BlockKind::Heading(level) => Block::Heading(level, runs.clone()),
+            BlockKind::ListItem => Block::ListItem(runs.clone()),
+            BlockKind::Quote => Block::Quote(runs.clone()),
         };
+        target.push(block);
+        runs.clear();
+    };
 
     for event in parser {
         match event {
@@ -69,7 +68,11 @@ pub fn render_blocks(source: &str) -> Vec<Block> {
                 in_list_item = false;
             }
             Event::End(TagEnd::Paragraph) => {
-                let kind = if in_quote { BlockKind::Quote } else { BlockKind::Paragraph };
+                let kind = if in_quote {
+                    BlockKind::Quote
+                } else {
+                    BlockKind::Paragraph
+                };
                 push_runs_as(&mut blocks, &mut runs, kind);
                 bold_stack = 0;
                 italic_stack = 0;

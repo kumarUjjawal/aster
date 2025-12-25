@@ -22,14 +22,11 @@ impl<E: 'static> Debouncer<E> {
     where
         F: 'static + Send + FnMut(&mut E, &mut Context<E>),
     {
-        let previous = self.task.take();
+        // Dropping a gpui::Task cancels it immediately. Keep only the latest scheduled work.
+        let _previous = self.task.take();
         let delay = self.delay;
 
         self.task = Some(cx.spawn(async move |entity, cx| {
-            if let Some(previous) = previous {
-                previous.await;
-            }
-
             cx.background_executor().timer(delay).await;
 
             let _ = entity.update(cx, |view, cx| job(view, cx));

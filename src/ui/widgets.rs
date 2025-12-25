@@ -1,4 +1,4 @@
-use gpui::{div, px, IntoElement, ParentElement, Rgba, SharedString, Styled};
+use gpui::{IntoElement, ParentElement, Rgba, SharedString, Styled, div, px};
 
 pub fn tag(text: impl Into<SharedString>, color: Rgba) -> impl IntoElement {
     div()
