@@ -51,6 +51,7 @@ pub fn render_blocks(source: &str) -> ParsedDocument {
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_TASKLISTS);
     options.insert(Options::ENABLE_FOOTNOTES);
+    options.insert(Options::ENABLE_SMART_PUNCTUATION);
     let parser = Parser::new_ext(source, options);
 
     let mut blocks = Vec::new();
