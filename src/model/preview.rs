@@ -1,15 +1,16 @@
 use crate::services::markdown::Block;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct PreviewState {
-    pub blocks: Vec<Block>,
+    pub blocks: Arc<Vec<Block>>,
     pub source_revision: u64,
 }
 
 impl PreviewState {
     pub fn new() -> Self {
         Self {
-            blocks: Vec::new(),
+            blocks: Arc::new(Vec::new()),
             source_revision: 0,
         }
     }

@@ -57,7 +57,7 @@ impl RootView {
             preview_view,
             file_explorer_view,
             notifications,
-            preview_debounce: Debouncer::new(Duration::from_millis(120)),
+            preview_debounce: Debouncer::new(Duration::from_millis(200)),
             view_mode: ViewMode::Split,
         }
     }
@@ -120,7 +120,8 @@ impl RootView {
                         Notification::success(format!(
                             "Saved {}",
                             path.file_name().unwrap_or("file")
-                        )),
+                        ))
+                        .autohide(true),
                         window,
                         cx,
                     );
@@ -191,16 +192,7 @@ impl RootView {
                     cx.notify();
                 });
                 cx.add_recent_document(path.as_std_path());
-                let _ = self.notifications.update(cx, |list, cx| {
-                    list.push(
-                        Notification::success(format!(
-                            "Opened {}",
-                            path.file_name().unwrap_or("file")
-                        )),
-                        window,
-                        cx,
-                    );
-                });
+                // No notification for opening - only save gets a notification
             }
             Err(err) => {
                 let _ = self.notifications.update(cx, |list, cx| {
@@ -226,10 +218,7 @@ impl RootView {
             d.save_snapshot();
             cx.notify();
         });
-
-        let _ = self.notifications.update(cx, |list, cx| {
-            list.push(Notification::info("New file"), window, cx);
-        });
+        // No notification for new file - only save gets a notification
     }
 
     fn action_open_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -289,38 +278,28 @@ impl Render for RootView {
             self.open_path(&path, window, cx);
         }
 
-        let doc_info = {
-            let doc = self.document.read(cx);
-            let cursor = doc.cursor.min(doc.rope.len_chars());
-            let selection = doc.selection_range();
-            let line_idx = doc.rope.char_to_line(cursor);
-            let col = cursor.saturating_sub(doc.rope.line_to_char(line_idx));
-            let line_count = doc.rope.len_lines();
-            let char_count = doc.rope.len_chars();
-            (
-                doc.path.clone(),
-                doc.dirty,
-                doc.revision,
-                doc.text(), // cheap enough for now
-                cursor,
-                selection,
-                line_idx,
-                col,
-                line_count,
-                char_count,
-            )
+        let (doc_path, doc_dirty, doc_revision, doc_text, word_count) = {
+            self.document.update(cx, |doc, _| {
+                (
+                    doc.path.clone(),
+                    doc.dirty,
+                    doc.revision,
+                    doc.text(),
+                    doc.get_word_count(),
+                )
+            })
         };
         let preview_rev = self.preview.read(cx).source_revision;
 
-        if doc_info.2 != preview_rev {
-            let text = doc_info.3.clone();
+        if doc_revision != preview_rev {
+            let text = doc_text.clone();
             let preview = self.preview.clone();
-            let target_rev = doc_info.2;
+            let target_rev = doc_revision;
             self.preview_debounce.schedule(cx, move |_, cx| {
                 let blocks = render_blocks(&text);
                 preview.update(cx, |p, cx| {
                     if target_rev >= p.source_revision {
-                        p.blocks = blocks;
+                        p.blocks = std::sync::Arc::new(blocks);
                         p.source_revision = target_rev;
                         cx.notify();
                     }
@@ -328,37 +307,16 @@ impl Render for RootView {
             });
         }
 
-        // Wire global shortcuts for open/save.
-        let word_count = doc_info.3.split_whitespace().count();
-        let selection_stats = doc_info.5.as_ref().map(|range| range.end - range.start);
-        let status_right = match selection_stats {
-            Some(selected_chars) => format!(
-                "Ln {}, Col {} | {} lines | {} words | {} chars | Sel {}",
-                doc_info.6 + 1,
-                doc_info.7 + 1,
-                doc_info.8,
-                word_count,
-                doc_info.9,
-                selected_chars
-            ),
-            None => format!(
-                "Ln {}, Col {} | {} lines | {} words | {} chars",
-                doc_info.6 + 1,
-                doc_info.7 + 1,
-                doc_info.8,
-                word_count,
-                doc_info.9
-            ),
-        };
+        // Use cached word count from document
+        let status_right = format!("{} words", word_count);
         // Use size_full() instead of explicit pixel dimensions to ensure proper layout
 
         let window_title = {
-            let name = doc_info
-                .0
+            let name = doc_path
                 .as_ref()
                 .and_then(|p| p.file_name())
                 .unwrap_or("untitled.md");
-            let dirty = if doc_info.1 { " •" } else { "" };
+            let dirty = if doc_dirty { " •" } else { "" };
             format!("{name}{dirty} — Aster")
         };
         window.set_window_title(&window_title);

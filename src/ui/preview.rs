@@ -25,7 +25,7 @@ impl PreviewView {
 
 impl Render for PreviewView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let blocks = self.preview.read(cx).blocks.clone();
+        let blocks = self.preview.read(cx).blocks.clone(); // Arc clone - cheap!
         let focus_handle = self
             .focus_handle
             .get_or_insert_with(|| cx.focus_handle())
@@ -91,7 +91,7 @@ impl Render for PreviewView {
                     .flex()
                     .flex_col()
                     .gap_3()
-                    .children(blocks.into_iter().map(render_block)),
+                    .children(blocks.iter().cloned().map(render_block)),
             )
     }
 }
