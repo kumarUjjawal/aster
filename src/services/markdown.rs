@@ -7,6 +7,7 @@ pub enum Block {
     ListItem(Vec<InlineRun>),
     CodeBlock(String),
     Quote(Vec<InlineRun>),
+    Image { alt: String, src: String },
 }
 
 #[derive(Clone, Debug)]
@@ -45,6 +46,8 @@ pub fn render_blocks(source: &str) -> Vec<Block> {
     let mut heading_level: Option<u32> = None;
     let mut in_list_item = false;
     let mut code_block: Option<String> = None;
+    // Image parsing state: (src, alt_text_accumulator)
+    let mut image_context: Option<(String, String)> = None;
 
     let push_runs_as = |target: &mut Vec<Block>, runs: &mut Vec<InlineRun>, kind: BlockKind| {
         if runs.is_empty() {
@@ -122,6 +125,11 @@ pub fn render_blocks(source: &str) -> Vec<Block> {
                     code.push_str(&t);
                     continue;
                 }
+                // Accumulate alt text if inside an image
+                if let Some((_, ref mut alt)) = image_context {
+                    alt.push_str(&t);
+                    continue;
+                }
                 runs.push(InlineRun::new(
                     t.to_string(),
                     bold_stack > 0,
@@ -156,6 +164,16 @@ pub fn render_blocks(source: &str) -> Vec<Block> {
             }
             Event::End(TagEnd::Link) => {
                 link_stack.pop();
+            }
+            Event::Start(Tag::Image { dest_url, .. }) => {
+                // Start collecting image: store src and prepare alt accumulator
+                image_context = Some((dest_url.to_string(), String::new()));
+            }
+            Event::End(TagEnd::Image) => {
+                // Finish image block with collected alt text
+                if let Some((src, alt)) = image_context.take() {
+                    blocks.push(Block::Image { alt, src });
+                }
             }
             Event::HardBreak | Event::SoftBreak => {
                 runs.push(InlineRun::new(

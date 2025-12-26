@@ -2,9 +2,10 @@ use crate::model::preview::PreviewState;
 use crate::services::markdown::{Block, InlineRun};
 use crate::ui::theme::Theme;
 use gpui::{
-    App, ClickEvent, Context, CursorStyle, Entity, FocusHandle, FontWeight, InteractiveElement,
-    IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ParentElement, Render, ScrollHandle,
-    SharedString, StatefulInteractiveElement, Styled, Window, div, point, px,
+    prelude::FluentBuilder, App, ClickEvent, Context, CursorStyle, Entity, FocusHandle, FontWeight,
+    InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ObjectFit,
+    ParentElement, Render, ScrollHandle, SharedString, SharedUri, StatefulInteractiveElement,
+    Styled, StyledImage, Window, div, img, point, px,
 };
 
 pub struct PreviewView {
@@ -96,7 +97,7 @@ impl Render for PreviewView {
     }
 }
 
-fn render_block(block: Block) -> impl IntoElement {
+fn render_block(block: Block) -> gpui::AnyElement {
     match block {
         Block::Heading(level, runs) => {
             let mut el = div().text_color(Theme::text());
@@ -114,21 +115,23 @@ fn render_block(block: Block) -> impl IntoElement {
                     .font_weight(FontWeight::BOLD)
                     .text_color(Theme::accent()),
             };
-            el.child(render_inline_runs(runs))
+            el.child(render_inline_runs(runs)).into_any_element()
         }
-        Block::Paragraph(runs) => div().child(render_inline_runs(runs)),
+        Block::Paragraph(runs) => div().child(render_inline_runs(runs)).into_any_element(),
         Block::ListItem(runs) => div()
             .flex()
             .items_start()
             .gap_2()
             .child(div().text_color(Theme::accent()).text_lg().child("•"))
-            .child(div().flex_1().min_w(px(0.)).child(render_inline_runs(runs))),
+            .child(div().flex_1().min_w(px(0.)).child(render_inline_runs(runs)))
+            .into_any_element(),
         Block::CodeBlock(text) => div()
             .font_family("Menlo")
             .bg(Theme::border())
             .p(px(10.))
             .rounded(px(4.))
-            .child(SharedString::from(text)),
+            .child(SharedString::from(text))
+            .into_any_element(),
         Block::Quote(runs) => div()
             .flex()
             .gap_2()
@@ -140,10 +143,50 @@ fn render_block(block: Block) -> impl IntoElement {
                     .text_color(Theme::muted())
                     .italic()
                     .child(render_inline_runs(runs)),
-            ),
+            )
+            .into_any_element(),
+        Block::Image { alt, src } => render_image_block(alt, src),
     }
 }
 
+/// Renders an image block with the given alt text and source.
+/// Supports HTTP/HTTPS URLs and local file paths.
+/// Images are scaled to fit the preview pane width while maintaining aspect ratio.
+fn render_image_block(alt: String, src: String) -> gpui::AnyElement {
+    use std::path::PathBuf;
+
+    // Create the image element with appropriate source
+    // GPUI's img() accepts various source types via From implementations:
+    // - SharedUri for HTTP/HTTPS URLs
+    // - PathBuf for local file paths
+    let img_element = if src.starts_with("http://") || src.starts_with("https://") {
+        // Remote image - use SharedUri
+        let uri: SharedUri = src.clone().into();
+        img(uri).w_full().object_fit(ObjectFit::ScaleDown)
+    } else {
+        // Local file path
+        let path = PathBuf::from(&src);
+        img(path).w_full().object_fit(ObjectFit::ScaleDown)
+    };
+
+    // Create container with image and optional alt text caption
+    div()
+        .w_full()
+        .flex()
+        .flex_col()
+        .gap_1()
+        .child(img_element)
+        .when(!alt.is_empty(), |el| {
+            el.child(
+                div()
+                    .text_xs()
+                    .text_color(Theme::muted())
+                    .italic()
+                    .child(SharedString::from(alt))
+            )
+        })
+        .into_any_element()
+}
 fn render_inline_runs(runs: Vec<InlineRun>) -> impl IntoElement {
     let lines = split_runs(runs);
     div()
