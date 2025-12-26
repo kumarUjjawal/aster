@@ -86,9 +86,10 @@ impl Render for PreviewView {
             })
             .child(
                 div()
+                    .w_full()
+                    .min_w(px(0.))
                     .flex()
                     .flex_col()
-                    .items_start()
                     .gap_3()
                     .children(blocks.into_iter().map(render_block)),
             )
@@ -146,15 +147,18 @@ fn render_block(block: Block) -> impl IntoElement {
 fn render_inline_runs(runs: Vec<InlineRun>) -> impl IntoElement {
     let lines = split_runs(runs);
     div()
+        .w_full()
+        .min_w(px(0.))
         .flex()
         .flex_col()
-        .gap_1()
         .children(lines.into_iter().map(|line| {
             div()
+                .w_full()
+                .min_w(px(0.))
                 .flex()
                 .flex_row()
                 .flex_wrap()
-                .gap_1()
+                .items_baseline()
                 .children(line.into_iter().map(render_inline_run))
         }))
 }

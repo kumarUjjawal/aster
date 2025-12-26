@@ -55,18 +55,11 @@ impl Render for FileExplorerView {
                     .as_ref()
                     .map(|p| p == &path)
                     .unwrap_or(false);
-
-                let icon = if is_dir {
-                    if expanded {
-                        IconName::ChevronDown
-                    } else {
-                        IconName::ChevronRight
-                    }
-                } else {
-                    IconName::File
-                };
-
                 let file_tree_clone = file_tree.clone();
+
+                // For folders, we show: chevron + folder icon + name
+                // For files, we show: file icon + name
+                let folder_color = gpui::rgb(0x7eb4ea); // Blue folder color matching the reference image
 
                 div()
                     .id(("file-entry", index))
@@ -93,13 +86,38 @@ impl Render for FileExplorerView {
                             }
                         }),
                     )
-                    .child(
-                        svg()
-                            .path(icon.path())
-                            .size(px(14.))
-                            .text_color(Theme::muted())
-                            .flex_shrink_0(),
-                    )
+                    .when(is_dir, |this| {
+                        // Folder: chevron + folder icon + name
+                        let chevron_icon = if expanded {
+                            IconName::ChevronDown
+                        } else {
+                            IconName::ChevronRight
+                        };
+                        this.child(
+                            svg()
+                                .path(chevron_icon.path())
+                                .size(px(12.))
+                                .text_color(Theme::muted())
+                                .flex_shrink_0(),
+                        )
+                        .child(
+                            svg()
+                                .path(IconName::Folder.path())
+                                .size(px(14.))
+                                .text_color(folder_color)
+                                .flex_shrink_0(),
+                        )
+                    })
+                    .when(!is_dir, |this| {
+                        // File: file icon + name
+                        this.child(
+                            svg()
+                                .path(IconName::File.path())
+                                .size(px(14.))
+                                .text_color(Theme::muted())
+                                .flex_shrink_0(),
+                        )
+                    })
                     .child(
                         div()
                             .text_sm()
@@ -116,7 +134,7 @@ impl Render for FileExplorerView {
             .flex_col()
             .h_full()
             .w(px(200.))
-            .bg(Theme::panel())
+            .bg(Theme::sidebar())
             .border_r_1()
             .border_color(Theme::border())
             .flex_shrink_0()

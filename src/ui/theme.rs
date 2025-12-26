@@ -9,6 +9,9 @@ impl Theme {
     pub fn panel() -> Rgba {
         rgb(0xffffff)
     }
+    pub fn sidebar() -> Rgba {
+        rgb(0xececec)
+    }
     pub fn panel_alt() -> Rgba {
         rgb(0xf2f3f7)
     }
