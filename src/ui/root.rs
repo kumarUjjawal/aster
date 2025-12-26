@@ -515,7 +515,6 @@ impl Render for RootView {
                             .min_w(px(0.))
                             .flex()
                             .flex_col()
-                            .p(px(16.))
                             .child(split_view),
                     ),
             )
