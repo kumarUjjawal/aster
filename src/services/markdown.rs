@@ -1,4 +1,5 @@
 use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
 pub enum Block {
@@ -10,6 +11,17 @@ pub enum Block {
     CodeBlock(String),
     Quote(Vec<InlineRun>),
     Image { alt: String, src: String },
+    /// Inline footnote reference marker [^label]
+    FootnoteRef { label: String, index: usize },
+    /// Footnote definition [^label]: content
+    FootnoteDefinition { label: String, index: usize, content: Vec<InlineRun> },
+}
+
+/// Result of parsing markdown, containing main content blocks and footnote definitions
+#[derive(Clone, Debug)]
+pub struct ParsedDocument {
+    pub blocks: Vec<Block>,
+    pub footnotes: Vec<Block>,
 }
 
 #[derive(Clone, Debug)]
@@ -33,11 +45,12 @@ impl InlineRun {
     }
 }
 
-pub fn render_blocks(source: &str) -> Vec<Block> {
+pub fn render_blocks(source: &str) -> ParsedDocument {
     let mut options = Options::empty();
     options.insert(Options::ENABLE_STRIKETHROUGH);
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_TASKLISTS);
+    options.insert(Options::ENABLE_FOOTNOTES);
     let parser = Parser::new_ext(source, options);
 
     let mut blocks = Vec::new();
@@ -55,6 +68,17 @@ pub fn render_blocks(source: &str) -> Vec<Block> {
     let mut task_list_checked: Option<bool> = None;
     // Ordered list state: Some(counter) if inside an ordered list, increments per item
     let mut ordered_list_counter: Option<u64> = None;
+    
+    // Footnote tracking
+    // Maps footnote labels to their display index (1-based, order of first reference)
+    let mut footnote_indices: HashMap<String, usize> = HashMap::new();
+    let mut next_footnote_index: usize = 1;
+    // Collect footnote definitions: (label, content runs)
+    let mut footnote_definitions: HashMap<String, Vec<InlineRun>> = HashMap::new();
+    // Current footnote definition being parsed: Some(label) if inside a definition
+    let mut current_footnote_def: Option<String> = None;
+    // Runs for current footnote definition
+    let mut footnote_runs: Vec<InlineRun> = Vec::new();
 
     let push_runs_as = |target: &mut Vec<Block>, runs: &mut Vec<InlineRun>, kind: BlockKind| {
         if runs.is_empty() {
@@ -73,19 +97,25 @@ pub fn render_blocks(source: &str) -> Vec<Block> {
     for event in parser {
         match event {
             Event::Start(Tag::Paragraph { .. }) => {
-                runs.clear();
-                heading_level = None;
-                in_list_item = false;
+                // Don't clear runs if inside a footnote definition
+                if current_footnote_def.is_none() {
+                    runs.clear();
+                    heading_level = None;
+                    in_list_item = false;
+                }
             }
             Event::End(TagEnd::Paragraph) => {
-                let kind = if in_quote {
-                    BlockKind::Quote
-                } else {
-                    BlockKind::Paragraph
-                };
-                push_runs_as(&mut blocks, &mut runs, kind);
-                bold_stack = 0;
-                italic_stack = 0;
+                // Don't push blocks if inside a footnote definition
+                if current_footnote_def.is_none() {
+                    let kind = if in_quote {
+                        BlockKind::Quote
+                    } else {
+                        BlockKind::Paragraph
+                    };
+                    push_runs_as(&mut blocks, &mut runs, kind);
+                    bold_stack = 0;
+                    italic_stack = 0;
+                }
             }
             Event::Start(Tag::Heading { level, .. }) => {
                 runs.clear();
@@ -160,6 +190,44 @@ pub fn render_blocks(source: &str) -> Vec<Block> {
                     blocks.push(Block::CodeBlock(text));
                 }
             }
+            // Footnote definition start
+            Event::Start(Tag::FootnoteDefinition(label)) => {
+                current_footnote_def = Some(label.to_string());
+                footnote_runs.clear();
+            }
+            // Footnote definition end
+            Event::End(TagEnd::FootnoteDefinition) => {
+                if let Some(label) = current_footnote_def.take() {
+                    footnote_definitions.insert(label, footnote_runs.clone());
+                    footnote_runs.clear();
+                }
+            }
+            // Footnote reference [^label]
+            Event::FootnoteReference(label) => {
+                let label_str = label.to_string();
+                // Assign an index if this is the first reference to this footnote
+                let index = *footnote_indices
+                    .entry(label_str.clone())
+                    .or_insert_with(|| {
+                        let idx = next_footnote_index;
+                        next_footnote_index += 1;
+                        idx
+                    });
+                
+                // Push current runs as a paragraph if there are any, then add the footnote ref
+                if !runs.is_empty() {
+                    let kind = if in_quote {
+                        BlockKind::Quote
+                    } else {
+                        BlockKind::Paragraph
+                    };
+                    push_runs_as(&mut blocks, &mut runs, kind);
+                }
+                blocks.push(Block::FootnoteRef {
+                    label: label_str,
+                    index,
+                });
+            }
             Event::Text(t) => {
                 if let Some(code) = code_block.as_mut() {
                     code.push_str(&t);
@@ -168,6 +236,17 @@ pub fn render_blocks(source: &str) -> Vec<Block> {
                 // Accumulate alt text if inside an image
                 if let Some((_, ref mut alt)) = image_context {
                     alt.push_str(&t);
+                    continue;
+                }
+                // If inside a footnote definition, add to footnote_runs
+                if current_footnote_def.is_some() {
+                    footnote_runs.push(InlineRun::new(
+                        t.to_string(),
+                        bold_stack > 0,
+                        italic_stack > 0,
+                        false,
+                        link_stack.last().cloned(),
+                    ));
                     continue;
                 }
                 runs.push(InlineRun::new(
@@ -179,6 +258,17 @@ pub fn render_blocks(source: &str) -> Vec<Block> {
                 ));
             }
             Event::Code(t) => {
+                // If inside a footnote definition, add to footnote_runs
+                if current_footnote_def.is_some() {
+                    footnote_runs.push(InlineRun::new(
+                        t.to_string(),
+                        bold_stack > 0,
+                        italic_stack > 0,
+                        true,
+                        link_stack.last().cloned(),
+                    ));
+                    continue;
+                }
                 runs.push(InlineRun::new(
                     t.to_string(),
                     bold_stack > 0,
@@ -216,6 +306,17 @@ pub fn render_blocks(source: &str) -> Vec<Block> {
                 }
             }
             Event::HardBreak | Event::SoftBreak => {
+                // If inside a footnote definition, add to footnote_runs
+                if current_footnote_def.is_some() {
+                    footnote_runs.push(InlineRun::new(
+                        "\n".to_string(),
+                        bold_stack > 0,
+                        italic_stack > 0,
+                        false,
+                        link_stack.last().cloned(),
+                    ));
+                    continue;
+                }
                 runs.push(InlineRun::new(
                     "\n".to_string(),
                     bold_stack > 0,
@@ -239,12 +340,36 @@ pub fn render_blocks(source: &str) -> Vec<Block> {
         push_runs_as(&mut blocks, &mut runs, kind);
     }
 
-    blocks
+    // Build footnote definitions list, ordered by index
+    let mut footnotes: Vec<(usize, String, Vec<InlineRun>)> = footnote_indices
+        .iter()
+        .filter_map(|(label, &index)| {
+            footnote_definitions
+                .remove(label)
+                .map(|content| (index, label.clone(), content))
+        })
+        .collect();
+    footnotes.sort_by_key(|(index, _, _)| *index);
+    
+    let footnote_blocks: Vec<Block> = footnotes
+        .into_iter()
+        .map(|(index, label, content)| Block::FootnoteDefinition {
+            label,
+            index,
+            content,
+        })
+        .collect();
+
+    ParsedDocument {
+        blocks,
+        footnotes: footnote_blocks,
+    }
 }
 
-pub enum BlockKind {
+enum BlockKind {
     Paragraph,
     Heading(u32),
     ListItem,
     Quote,
 }
+

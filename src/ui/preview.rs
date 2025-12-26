@@ -27,11 +27,19 @@ impl PreviewView {
 impl Render for PreviewView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let blocks = self.preview.read(cx).blocks.clone(); // Arc clone - cheap!
+        let footnotes = self.preview.read(cx).footnotes.clone(); // Arc clone - cheap!
         let focus_handle = self
             .focus_handle
             .get_or_insert_with(|| cx.focus_handle())
             .clone();
         let scroll_handle = self.scroll_handle.clone();
+
+        // Clone scroll_handle for use in closures
+        let scroll_handle_for_blocks = Some(scroll_handle.clone());
+        let scroll_handle_for_footnotes = Some(scroll_handle.clone());
+
+        // Build the footnotes section if there are any
+        let has_footnotes = !footnotes.is_empty();
 
         div()
             .id("preview_scroll")
@@ -92,12 +100,42 @@ impl Render for PreviewView {
                     .flex()
                     .flex_col()
                     .gap_3()
-                    .children(group_blocks(blocks.as_ref().clone()).into_iter().map(render_block_group)),
+                    .children({
+                        let handle = scroll_handle_for_blocks.clone();
+                        group_blocks(blocks.as_ref().clone())
+                            .into_iter()
+                            .map(move |g| render_block_group(g, handle.clone()))
+                    })
+                    // Add footnotes section if there are footnotes
+                    .when(has_footnotes, |el| {
+                        el.child(
+                            // Horizontal rule separator
+                            div()
+                                .w_full()
+                                .h(px(1.))
+                                .bg(Theme::border())
+                                .my_3()
+                        )
+                        .child(
+                            // Footnotes container
+                            div()
+                                .id("footnotes_section")
+                                .flex()
+                                .flex_col()
+                                .gap_1()
+                                .children({
+                                    let handle = scroll_handle_for_footnotes.clone();
+                                    footnotes.as_ref().clone().into_iter().map(move |block| {
+                                        render_block(block, handle.clone())
+                                    })
+                                })
+                        )
+                    })
             )
     }
 }
 
-fn render_block(block: Block) -> gpui::AnyElement {
+fn render_block(block: Block, scroll_handle: Option<ScrollHandle>) -> gpui::AnyElement {
     match block {
         Block::Heading(level, runs) => {
             let mut el = div().text_color(Theme::text());
@@ -177,6 +215,64 @@ fn render_block(block: Block) -> gpui::AnyElement {
             )
             .child(div().flex_1().min_w(px(0.)).child(render_inline_runs(content)))
             .into_any_element(),
+        Block::FootnoteRef { label, index } => {
+            // Render as superscript number that links to definition
+            let scroll_handle_clone = scroll_handle.clone();
+            let label_clone = label.clone();
+            div()
+                .id(SharedString::from(format!("footnote_ref_{}", label)))
+                .text_xs()
+                .text_color(Theme::accent())
+                .cursor_pointer()
+                .child(SharedString::from(format!("[{}]", index)))
+                .when_some(scroll_handle_clone, move |el, _handle| {
+                    el.on_click(move |_: &ClickEvent, _window: &mut Window, _cx: &mut App| {
+                        // TODO: Scroll to footnote definition when GPUI supports scroll_to_item by ID
+                        // For now, clicking will be a no-op until we can implement proper scrolling
+                        let _ = &label_clone; // Keeps the label for future scroll-to implementation
+                    })
+                })
+                .into_any_element()
+        }
+        Block::FootnoteDefinition { label, index, content } => {
+            // Render footnote definition with number and backlink
+            let scroll_handle_clone = scroll_handle.clone();
+            let label_clone = label.clone();
+            div()
+                .id(SharedString::from(format!("footnote_def_{}", label)))
+                .flex()
+                .items_start()
+                .gap_2()
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(Theme::accent())
+                        .font_weight(FontWeight::BOLD)
+                        .child(SharedString::from(format!("{}.", index)))
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w(px(0.))
+                        .text_sm()
+                        .child(render_inline_runs(content))
+                )
+                .child(
+                    div()
+                        .id(SharedString::from(format!("footnote_back_{}", label)))
+                        .text_xs()
+                        .text_color(Theme::accent())
+                        .cursor_pointer()
+                        .child("↩")
+                        .when_some(scroll_handle_clone, move |el, _handle| {
+                            el.on_click(move |_: &ClickEvent, _window: &mut Window, _cx: &mut App| {
+                                // TODO: Scroll back to reference when GPUI supports scroll_to_item by ID
+                                let _ = &label_clone;
+                            })
+                        })
+                )
+                .into_any_element()
+        }
     }
 }
 
@@ -384,14 +480,18 @@ fn group_blocks(blocks: Vec<Block>) -> Vec<BlockGroup> {
     groups
 }
 
-fn render_block_group(group: BlockGroup) -> gpui::AnyElement {
+fn render_block_group(group: BlockGroup, scroll_handle: Option<ScrollHandle>) -> gpui::AnyElement {
     match group {
-        BlockGroup::Single(block) => render_block(block),
-        BlockGroup::ListGroup(blocks) => div()
-            .flex()
-            .flex_col()
-            .gap_0()
-            .children(blocks.into_iter().map(render_block))
-            .into_any_element(),
+        BlockGroup::Single(block) => render_block(block, scroll_handle),
+        BlockGroup::ListGroup(blocks) => {
+            let handle = scroll_handle.clone();
+            div()
+                .flex()
+                .flex_col()
+                .gap_0()
+                .children(blocks.into_iter().map(move |b| render_block(b, handle.clone())))
+                .into_any_element()
+        }
     }
 }
+

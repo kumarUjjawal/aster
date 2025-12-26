@@ -302,14 +302,15 @@ impl Render for RootView {
                 // Spawn async task to parse markdown in background
                 cx.spawn(async move |_, cx| {
                     // Run render_blocks on background thread to avoid blocking UI
-                    let blocks = cx.background_executor().spawn(async move {
+                    let parsed = cx.background_executor().spawn(async move {
                         render_blocks(&text)
                     }).await;
                     
                     // Update preview state on main thread
                     let _ = preview.update(cx, |p, cx| {
                         if target_rev >= p.source_revision {
-                            p.blocks = std::sync::Arc::new(blocks);
+                            p.blocks = std::sync::Arc::new(parsed.blocks);
+                            p.footnotes = std::sync::Arc::new(parsed.footnotes);
                             p.source_revision = target_rev;
                             cx.notify();
                         }
