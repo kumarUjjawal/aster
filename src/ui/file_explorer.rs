@@ -139,23 +139,6 @@ impl Render for FileExplorerView {
             .border_color(Theme::border())
             .flex_shrink_0()
             .child(
-                // Header
-                div()
-                    .flex()
-                    .items_center()
-                    .px(px(12.))
-                    .py(px(10.))
-                    .border_b_1()
-                    .border_color(Theme::border())
-                    .child(
-                        div()
-                            .text_xs()
-                            .font_weight(gpui::FontWeight::SEMIBOLD)
-                            .text_color(Theme::muted())
-                            .child("FILES"),
-                    ),
-            )
-            .child(
                 // File list
                 div()
                     .id("file-explorer-scroll")

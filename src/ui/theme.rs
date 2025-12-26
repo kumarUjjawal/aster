@@ -30,9 +30,7 @@ impl Theme {
     pub fn selection_bg() -> Rgba {
         rgba(0x2d7fd233) // accent with low alpha for text selection
     }
-    pub fn warn() -> Rgba {
-        rgb(0xffb347)
-    }
+
     pub fn strong() -> Rgba {
         rgb(0xc02f4d)
     }

@@ -9,7 +9,7 @@ use crate::ui::editor::EditorView;
 use crate::ui::file_explorer::FileExplorerView;
 use crate::ui::preview::PreviewView;
 use crate::ui::theme::Theme;
-use crate::ui::widgets::tag;
+
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     Context, Entity, InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement,
