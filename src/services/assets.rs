@@ -41,6 +41,22 @@ static TRIANGLE_ALERT: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/assets/icons/triangle-alert.svg"
 ));
+static FOLDER: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/assets/icons/folder.svg"
+));
+static FILE: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/assets/icons/file.svg"
+));
+static CHEVRON_RIGHT: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/assets/icons/chevron-right.svg"
+));
+static CHEVRON_DOWN: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/assets/icons/chevron-down.svg"
+));
 
 impl AssetSource for AsterAssetSource {
     fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
@@ -53,6 +69,10 @@ impl AssetSource for AsterAssetSource {
             "icons/panel-left.svg" => PANEL_LEFT,
             "icons/panel-right.svg" => PANEL_RIGHT,
             "icons/triangle-alert.svg" => TRIANGLE_ALERT,
+            "icons/folder.svg" => FOLDER,
+            "icons/file.svg" => FILE,
+            "icons/chevron-right.svg" => CHEVRON_RIGHT,
+            "icons/chevron-down.svg" => CHEVRON_DOWN,
             _ => return Ok(None),
         };
         Ok(Some(Cow::Borrowed(bytes)))
@@ -68,6 +88,10 @@ impl AssetSource for AsterAssetSource {
             "icons/panel-left.svg",
             "icons/panel-right.svg",
             "icons/triangle-alert.svg",
+            "icons/folder.svg",
+            "icons/file.svg",
+            "icons/chevron-right.svg",
+            "icons/chevron-down.svg",
         ];
 
         if path.is_empty() || path == "." {
