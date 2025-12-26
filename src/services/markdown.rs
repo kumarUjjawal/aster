@@ -5,6 +5,8 @@ pub enum Block {
     Paragraph(Vec<InlineRun>),
     Heading(u32, Vec<InlineRun>),
     ListItem(Vec<InlineRun>),
+    OrderedListItem { number: u64, content: Vec<InlineRun> },
+    TaskListItem { checked: bool, content: Vec<InlineRun> },
     CodeBlock(String),
     Quote(Vec<InlineRun>),
     Image { alt: String, src: String },
@@ -35,6 +37,7 @@ pub fn render_blocks(source: &str) -> Vec<Block> {
     let mut options = Options::empty();
     options.insert(Options::ENABLE_STRIKETHROUGH);
     options.insert(Options::ENABLE_TABLES);
+    options.insert(Options::ENABLE_TASKLISTS);
     let parser = Parser::new_ext(source, options);
 
     let mut blocks = Vec::new();
@@ -48,6 +51,10 @@ pub fn render_blocks(source: &str) -> Vec<Block> {
     let mut code_block: Option<String> = None;
     // Image parsing state: (src, alt_text_accumulator)
     let mut image_context: Option<(String, String)> = None;
+    // Task list state: Some(checked) if inside a task list item
+    let mut task_list_checked: Option<bool> = None;
+    // Ordered list state: Some(counter) if inside an ordered list, increments per item
+    let mut ordered_list_counter: Option<u64> = None;
 
     let push_runs_as = |target: &mut Vec<Block>, runs: &mut Vec<InlineRun>, kind: BlockKind| {
         if runs.is_empty() {
@@ -98,13 +105,46 @@ pub fn render_blocks(source: &str) -> Vec<Block> {
                 bold_stack = 0;
                 italic_stack = 0;
             }
+            Event::Start(Tag::List(start_number)) => {
+                // start_number is Some(n) for ordered lists, None for unordered
+                ordered_list_counter = start_number;
+            }
+            Event::End(TagEnd::List(_)) => {
+                ordered_list_counter = None;
+            }
             Event::Start(Tag::Item) => {
                 runs.clear();
                 in_list_item = true;
+                task_list_checked = None;
             }
             Event::End(TagEnd::Item) => {
-                push_runs_as(&mut blocks, &mut runs, BlockKind::ListItem);
+                if let Some(checked) = task_list_checked.take() {
+                    // This is a task list item
+                    if !runs.is_empty() {
+                        blocks.push(Block::TaskListItem {
+                            checked,
+                            content: runs.clone(),
+                        });
+                        runs.clear();
+                    }
+                } else if let Some(ref mut counter) = ordered_list_counter {
+                    // Ordered list item
+                    if !runs.is_empty() {
+                        blocks.push(Block::OrderedListItem {
+                            number: *counter,
+                            content: runs.clone(),
+                        });
+                        runs.clear();
+                    }
+                    *counter += 1;
+                } else {
+                    // Unordered list item
+                    push_runs_as(&mut blocks, &mut runs, BlockKind::ListItem);
+                }
                 in_list_item = false;
+            }
+            Event::TaskListMarker(checked) => {
+                task_list_checked = Some(checked);
             }
             Event::Start(Tag::BlockQuote(_)) => {
                 in_quote = true;

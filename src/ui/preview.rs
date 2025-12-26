@@ -92,7 +92,7 @@ impl Render for PreviewView {
                     .flex()
                     .flex_col()
                     .gap_3()
-                    .children(blocks.iter().cloned().map(render_block)),
+                    .children(group_blocks(blocks.as_ref().clone()).into_iter().map(render_block_group)),
             )
     }
 }
@@ -146,6 +146,37 @@ fn render_block(block: Block) -> gpui::AnyElement {
             )
             .into_any_element(),
         Block::Image { alt, src } => render_image_block(alt, src),
+        Block::TaskListItem { checked, content } => {
+            let checkbox = if checked {
+                div()
+                    .text_lg()
+                    .text_color(Theme::accent())
+                    .child("☑")
+            } else {
+                div()
+                    .text_lg()
+                    .text_color(Theme::muted())
+                    .child("☐")
+            };
+            div()
+                .flex()
+                .items_start()
+                .gap_2()
+                .child(checkbox)
+                .child(div().flex_1().min_w(px(0.)).child(render_inline_runs(content)))
+                .into_any_element()
+        }
+        Block::OrderedListItem { number, content } => div()
+            .flex()
+            .items_start()
+            .gap_2()
+            .child(
+                div()
+                    .text_color(Theme::accent())
+                    .child(SharedString::from(format!("{}.", number))),
+            )
+            .child(div().flex_1().min_w(px(0.)).child(render_inline_runs(content)))
+            .into_any_element(),
     }
 }
 
@@ -290,4 +321,77 @@ fn split_runs(runs: Vec<InlineRun>) -> Vec<Vec<InlineRun>> {
         }
     }
     lines
+}
+
+/// Groups consecutive list items together for compact rendering
+enum BlockGroup {
+    Single(Block),
+    ListGroup(Vec<Block>),
+}
+
+/// Identifies the list type for grouping purposes
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ListType {
+    Unordered,
+    Ordered,
+    Task,
+}
+
+fn get_list_type(block: &Block) -> Option<ListType> {
+    match block {
+        Block::ListItem(_) => Some(ListType::Unordered),
+        Block::OrderedListItem { .. } => Some(ListType::Ordered),
+        Block::TaskListItem { .. } => Some(ListType::Task),
+        _ => None,
+    }
+}
+
+fn group_blocks(blocks: Vec<Block>) -> Vec<BlockGroup> {
+    let mut groups: Vec<BlockGroup> = Vec::new();
+    let mut current_list: Vec<Block> = Vec::new();
+    let mut current_list_type: Option<ListType> = None;
+
+    for block in blocks {
+        let block_list_type = get_list_type(&block);
+        
+        if let Some(list_type) = block_list_type {
+            // Check if this is the same type as the current list
+            if current_list_type == Some(list_type) {
+                current_list.push(block);
+            } else {
+                // Different list type - flush the current list first
+                if !current_list.is_empty() {
+                    groups.push(BlockGroup::ListGroup(std::mem::take(&mut current_list)));
+                }
+                current_list.push(block);
+                current_list_type = Some(list_type);
+            }
+        } else {
+            // Not a list block - flush any pending list items
+            if !current_list.is_empty() {
+                groups.push(BlockGroup::ListGroup(std::mem::take(&mut current_list)));
+                current_list_type = None;
+            }
+            groups.push(BlockGroup::Single(block));
+        }
+    }
+
+    // Don't forget the last group
+    if !current_list.is_empty() {
+        groups.push(BlockGroup::ListGroup(current_list));
+    }
+
+    groups
+}
+
+fn render_block_group(group: BlockGroup) -> gpui::AnyElement {
+    match group {
+        BlockGroup::Single(block) => render_block(block),
+        BlockGroup::ListGroup(blocks) => div()
+            .flex()
+            .flex_col()
+            .gap_0()
+            .children(blocks.into_iter().map(render_block))
+            .into_any_element(),
+    }
 }
