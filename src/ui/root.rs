@@ -329,11 +329,6 @@ impl Render for RootView {
         }
 
         // Wire global shortcuts for open/save.
-        let status_tag = if doc_info.1 {
-            tag("dirty", Theme::warn())
-        } else {
-            tag("saved", Theme::muted())
-        };
         let word_count = doc_info.3.split_whitespace().count();
         let selection_stats = doc_info.5.as_ref().map(|range| range.end - range.start);
         let status_right = match selection_stats {
@@ -355,9 +350,7 @@ impl Render for RootView {
                 doc_info.9
             ),
         };
-        let bounds = window.bounds();
-        let w: f32 = bounds.size.width.into();
-        let h: f32 = bounds.size.height.into();
+        // Use size_full() instead of explicit pixel dimensions to ensure proper layout
 
         let window_title = {
             let name = doc_info
@@ -425,11 +418,7 @@ impl Render for RootView {
                 ViewMode::Preview,
             ));
 
-        let file_label = doc_info
-            .0
-            .as_ref()
-            .and_then(|p| p.file_name().map(|name| name.to_string()))
-            .unwrap_or_else(|| "untitled.md".to_string());
+
 
         let split_view = div()
             .flex()
@@ -452,22 +441,13 @@ impl Render for RootView {
             .items_center()
             .gap_3()
             .px(px(16.))
-            .py(px(10.))
+            .py(px(4.))
             .bg(Theme::panel())
             .border_t_1()
             .border_color(Theme::border())
             .flex_shrink_0()
             .child(view_controls)
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .flex_1()
-                    .min_w(px(0.))
-                    .child(div().truncate().child(file_label))
-                    .child(status_tag),
-            )
+            .child(div().flex_1())
             .child(
                 div()
                     .text_sm()
@@ -483,8 +463,7 @@ impl Render for RootView {
             .flex_col()
             .bg(Theme::bg())
             .text_color(Theme::text())
-            .w(px(w))
-            .h(px(h))
+            .size_full()
             .on_action(cx.listener(|this, _: &NewFile, window, cx| {
                 this.action_new_file(window, cx);
             }))
