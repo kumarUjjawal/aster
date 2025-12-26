@@ -296,14 +296,25 @@ impl Render for RootView {
             let preview = self.preview.clone();
             let target_rev = doc_revision;
             self.preview_debounce.schedule(cx, move |_, cx| {
-                let blocks = render_blocks(&text);
-                preview.update(cx, |p, cx| {
-                    if target_rev >= p.source_revision {
-                        p.blocks = std::sync::Arc::new(blocks);
-                        p.source_revision = target_rev;
-                        cx.notify();
-                    }
-                });
+                // Clone values inside FnMut so they can be moved into async
+                let text = text.clone();
+                let preview = preview.clone();
+                // Spawn async task to parse markdown in background
+                cx.spawn(async move |_, cx| {
+                    // Run render_blocks on background thread to avoid blocking UI
+                    let blocks = cx.background_executor().spawn(async move {
+                        render_blocks(&text)
+                    }).await;
+                    
+                    // Update preview state on main thread
+                    let _ = preview.update(cx, |p, cx| {
+                        if target_rev >= p.source_revision {
+                            p.blocks = std::sync::Arc::new(blocks);
+                            p.source_revision = target_rev;
+                            cx.notify();
+                        }
+                    });
+                }).detach();
             });
         }
 

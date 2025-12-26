@@ -17,6 +17,8 @@ pub struct EditorView {
     caret_visible: bool,
     blink_task: Option<gpui::Task<()>>,
     scroll_handle: ScrollHandle,
+    /// Cached text with revision to avoid repeated rope-to-string conversions
+    cached_text: Option<(u64, String)>,
 }
 
 impl EditorView {
@@ -27,6 +29,7 @@ impl EditorView {
             caret_visible: true,
             blink_task: None,
             scroll_handle: ScrollHandle::new(),
+            cached_text: None,
         }
     }
 
@@ -81,8 +84,25 @@ impl Render for EditorView {
             })
             .clone();
         let is_focused = focus_handle.is_focused(window);
+        // Use cached text if revision hasn't changed to avoid O(n) rope conversion
+        let (text_owned, doc_revision) = {
+            let doc = self.document.read(cx);
+            let rev = doc.revision;
+            if let Some((cached_rev, ref text)) = self.cached_text {
+                if cached_rev == rev {
+                    (text.clone(), rev)
+                } else {
+                    (doc.text(), rev)
+                }
+            } else {
+                (doc.text(), rev)
+            }
+        };
+        // Update cache if needed (after releasing the read borrow)
+        if self.cached_text.as_ref().map(|(r, _)| *r) != Some(doc_revision) {
+            self.cached_text = Some((doc_revision, text_owned.clone()));
+        }
         let doc = self.document.read(cx);
-        let text_owned = doc.text();
         let cursor_byte = doc.char_to_byte(doc.cursor);
         let show_caret = doc.selection.is_none();
         let draw_caret = show_caret && is_focused && self.caret_visible;
