@@ -1,5 +1,18 @@
-use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{Alignment, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use std::collections::HashMap;
+
+/// A single cell in a table
+#[derive(Clone, Debug)]
+pub struct TableCell {
+    pub content: Vec<InlineRun>,
+    pub is_header: bool,
+}
+
+/// A row in a table
+#[derive(Clone, Debug)]
+pub struct TableRow {
+    pub cells: Vec<TableCell>,
+}
 
 #[derive(Clone, Debug)]
 pub enum Block {
@@ -15,6 +28,8 @@ pub enum Block {
     FootnoteRef { label: String, index: usize },
     /// Footnote definition [^label]: content
     FootnoteDefinition { label: String, index: usize, content: Vec<InlineRun> },
+    /// GFM Table with column alignments and rows
+    Table { alignments: Vec<Alignment>, rows: Vec<TableRow> },
 }
 
 /// Result of parsing markdown, containing main content blocks and footnote definitions
@@ -80,6 +95,16 @@ pub fn render_blocks(source: &str) -> ParsedDocument {
     let mut current_footnote_def: Option<String> = None;
     // Runs for current footnote definition
     let mut footnote_runs: Vec<InlineRun> = Vec::new();
+
+    // Table parsing state
+    // Current table: (alignments, rows collected so far)
+    let mut current_table: Option<(Vec<Alignment>, Vec<TableRow>)> = None;
+    // Current row's cells
+    let mut current_table_row: Vec<TableCell> = Vec::new();
+    // Current cell's inline runs
+    let mut current_cell_runs: Vec<InlineRun> = Vec::new();
+    // Whether we're in the table header section
+    let mut in_table_head = false;
 
     let push_runs_as = |target: &mut Vec<Block>, runs: &mut Vec<InlineRun>, kind: BlockKind| {
         if runs.is_empty() {
@@ -239,6 +264,17 @@ pub fn render_blocks(source: &str) -> ParsedDocument {
                     alt.push_str(&t);
                     continue;
                 }
+                // If inside a table cell, add to current_cell_runs
+                if current_table.is_some() {
+                    current_cell_runs.push(InlineRun::new(
+                        t.to_string(),
+                        bold_stack > 0,
+                        italic_stack > 0,
+                        false,
+                        link_stack.last().cloned(),
+                    ));
+                    continue;
+                }
                 // If inside a footnote definition, add to footnote_runs
                 if current_footnote_def.is_some() {
                     footnote_runs.push(InlineRun::new(
@@ -259,6 +295,17 @@ pub fn render_blocks(source: &str) -> ParsedDocument {
                 ));
             }
             Event::Code(t) => {
+                // If inside a table cell, add to current_cell_runs
+                if current_table.is_some() {
+                    current_cell_runs.push(InlineRun::new(
+                        t.to_string(),
+                        bold_stack > 0,
+                        italic_stack > 0,
+                        true,
+                        link_stack.last().cloned(),
+                    ));
+                    continue;
+                }
                 // If inside a footnote definition, add to footnote_runs
                 if current_footnote_def.is_some() {
                     footnote_runs.push(InlineRun::new(
@@ -325,6 +372,40 @@ pub fn render_blocks(source: &str) -> ParsedDocument {
                     false,
                     link_stack.last().cloned(),
                 ));
+            }
+            // Table events
+            Event::Start(Tag::Table(alignments)) => {
+                current_table = Some((alignments.to_vec(), Vec::new()));
+            }
+            Event::End(TagEnd::Table) => {
+                if let Some((alignments, rows)) = current_table.take() {
+                    blocks.push(Block::Table { alignments, rows });
+                }
+            }
+            Event::Start(Tag::TableHead) => {
+                in_table_head = true;
+            }
+            Event::End(TagEnd::TableHead) => {
+                in_table_head = false;
+            }
+            Event::Start(Tag::TableRow) => {
+                current_table_row.clear();
+            }
+            Event::End(TagEnd::TableRow) => {
+                if let Some((_, ref mut rows)) = current_table {
+                    rows.push(TableRow {
+                        cells: std::mem::take(&mut current_table_row),
+                    });
+                }
+            }
+            Event::Start(Tag::TableCell) => {
+                current_cell_runs.clear();
+            }
+            Event::End(TagEnd::TableCell) => {
+                current_table_row.push(TableCell {
+                    content: std::mem::take(&mut current_cell_runs),
+                    is_header: in_table_head,
+                });
             }
             _ => {}
         }

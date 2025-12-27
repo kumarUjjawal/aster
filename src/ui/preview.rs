@@ -1,5 +1,5 @@
 use crate::model::preview::PreviewState;
-use crate::services::markdown::{Block, InlineRun};
+use crate::services::markdown::{Block, InlineRun, TableCell, TableRow};
 use crate::ui::theme::Theme;
 use gpui::{
     prelude::FluentBuilder, App, ClickEvent, Context, CursorStyle, Entity, FocusHandle, FontWeight,
@@ -273,6 +273,7 @@ fn render_block(block: Block, scroll_handle: Option<ScrollHandle>) -> gpui::AnyE
                 )
                 .into_any_element()
         }
+        Block::Table { alignments, rows } => render_table(alignments, rows),
     }
 }
 
@@ -314,6 +315,75 @@ fn render_image_block(alt: String, src: String) -> gpui::AnyElement {
         })
         .into_any_element()
 }
+
+/// Renders a GFM table with borders, header styling, and column alignment.
+fn render_table(alignments: Vec<pulldown_cmark::Alignment>, rows: Vec<TableRow>) -> gpui::AnyElement {
+    use pulldown_cmark::Alignment;
+    
+    div()
+        .w_full()
+        .overflow_x_hidden()
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .border_1()
+                .border_color(Theme::border())
+                .rounded(px(4.))
+                .overflow_hidden()
+                .children(rows.into_iter().enumerate().map(|(row_idx, row)| {
+                    let is_header = row.cells.first().map(|c| c.is_header).unwrap_or(false);
+                    let alignments = alignments.clone();
+                    
+                    div()
+                        .flex()
+                        .flex_row()
+                        .when(is_header, |el| {
+                            el.bg(Theme::border())
+                                .font_weight(FontWeight::BOLD)
+                        })
+                        .when(row_idx > 0, |el| {
+                            el.border_t_1()
+                                .border_color(Theme::border())
+                        })
+                        .children(row.cells.into_iter().enumerate().map({
+                            let alignments = alignments.clone();
+                            move |(col_idx, cell)| {
+                                let alignment = alignments.get(col_idx).copied().unwrap_or(Alignment::None);
+                                render_table_cell(cell, alignment, col_idx > 0)
+                            }
+                        }))
+                }))
+        )
+        .into_any_element()
+}
+
+/// Renders a single table cell with alignment and border.
+fn render_table_cell(cell: TableCell, alignment: pulldown_cmark::Alignment, has_left_border: bool) -> gpui::AnyElement {
+    use pulldown_cmark::Alignment;
+    
+    let mut el = div()
+        .flex_1()
+        .min_w(px(60.))
+        .px(px(8.))
+        .py(px(6.));
+    
+    // Add left border for non-first columns
+    if has_left_border {
+        el = el.border_l_1().border_color(Theme::border());
+    }
+    
+    // Apply text alignment
+    el = match alignment {
+        Alignment::Left | Alignment::None => el,
+        Alignment::Center => el.flex().justify_center(),
+        Alignment::Right => el.flex().justify_end(),
+    };
+    
+    el.child(render_inline_runs(cell.content))
+        .into_any_element()
+}
+
 fn render_inline_runs(runs: Vec<InlineRun>) -> impl IntoElement {
     let lines = split_runs(runs);
     div()
