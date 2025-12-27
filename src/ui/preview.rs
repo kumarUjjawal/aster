@@ -129,7 +129,7 @@ impl Render for PreviewView {
 fn render_block(block: Block, scroll_handle: Option<ScrollHandle>) -> gpui::AnyElement {
     match block {
         Block::Heading(level, runs) => {
-            let mut el = div().text_color(Theme::text());
+            let mut el = div().w_full().min_w(px(0.)).text_color(Theme::text());
             el = match level {
                 1 => el
                     .text_2xl()
@@ -146,7 +146,7 @@ fn render_block(block: Block, scroll_handle: Option<ScrollHandle>) -> gpui::AnyE
             };
             el.child(render_inline_runs(runs)).into_any_element()
         }
-        Block::Paragraph(runs) => div().child(render_inline_runs(runs)).into_any_element(),
+        Block::Paragraph(runs) => div().w_full().min_w(px(0.)).child(render_inline_runs(runs)).into_any_element(),
         Block::ListItem(runs) => div()
             .flex()
             .items_start()
@@ -423,7 +423,7 @@ fn render_inline_run(r: InlineRun) -> impl IntoElement {
     if let Some(ref url) = r.link {
         let url_for_click = url.clone();
         let link_id = LINK_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let base = apply_base_styles(div().child(SharedString::from(text)));
+        let base = apply_base_styles(div().w_full().min_w(px(0.)).child(SharedString::from(text)));
         return base
             .id(SharedString::from(format!("link_{}", link_id)))
             .text_color(Theme::accent())
@@ -436,7 +436,7 @@ fn render_inline_run(r: InlineRun) -> impl IntoElement {
     }
 
     // Non-link runs
-    apply_base_styles(div().child(SharedString::from(text))).into_any_element()
+    apply_base_styles(div().w_full().min_w(px(0.)).child(SharedString::from(text))).into_any_element()
 }
 
 /// Opens a URL in the system's default browser.
