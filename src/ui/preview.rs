@@ -2,16 +2,23 @@ use crate::model::preview::PreviewState;
 use crate::services::markdown::{Block, InlineRun, TableCell, TableRow};
 use crate::ui::theme::Theme;
 use gpui::{
-    prelude::FluentBuilder, App, ClickEvent, Context, CursorStyle, Entity, FocusHandle, FontWeight,
-    InteractiveElement, IntoElement, KeyDownEvent, MouseButton, MouseDownEvent, ObjectFit,
+    prelude::FluentBuilder, list, App, ClickEvent, Context, CursorStyle, Entity, FocusHandle, FontWeight,
+    InteractiveElement, IntoElement, ListAlignment, ListState, MouseButton, MouseDownEvent, ObjectFit,
     ParentElement, Render, ScrollHandle, SharedString, SharedUri, StatefulInteractiveElement,
-    Styled, StyledImage, Window, div, img, point, px,
+    Styled, StyledImage, Window, div, img, px,
 };
+use std::sync::Arc;
 
 pub struct PreviewView {
     preview: Entity<PreviewState>,
     focus_handle: Option<FocusHandle>,
     scroll_handle: ScrollHandle,
+    /// Virtualized list state for efficient rendering of large documents
+    list_state: ListState,
+    /// Cached grouped blocks to avoid O(n) clone and regrouping every frame
+    cached_groups: Option<Arc<Vec<BlockGroup>>>,
+    /// Pointer to the blocks Arc for cache invalidation
+    cached_blocks_ptr: usize,
 }
 
 impl PreviewView {
@@ -20,6 +27,10 @@ impl PreviewView {
             preview,
             focus_handle: None,
             scroll_handle: ScrollHandle::new(),
+            // Virtualized list: 0 items initially, top alignment, 300px overdraw for smooth scrolling
+            list_state: ListState::new(0, ListAlignment::Top, px(300.0)),
+            cached_groups: None,
+            cached_blocks_ptr: 0,
         }
     }
 }
@@ -32,17 +43,28 @@ impl Render for PreviewView {
             .focus_handle
             .get_or_insert_with(|| cx.focus_handle())
             .clone();
-        let scroll_handle = self.scroll_handle.clone();
 
-        // Clone scroll_handle for use in closures
-        let scroll_handle_for_blocks = Some(scroll_handle.clone());
-        let scroll_handle_for_footnotes = Some(scroll_handle.clone());
+        // Clone scroll_handle for use in footnote closures
+        let scroll_handle_for_footnotes = Some(self.scroll_handle.clone());
 
         // Build the footnotes section if there are any
         let has_footnotes = !footnotes.is_empty();
 
+        // Cache grouped blocks - only recompute when blocks Arc changes
+        let blocks_ptr = Arc::as_ptr(&blocks) as usize;
+        let grouped = if self.cached_blocks_ptr == blocks_ptr && self.cached_groups.is_some() {
+            self.cached_groups.clone().unwrap()
+        } else {
+            let groups = Arc::new(group_blocks(blocks.as_ref().clone()));
+            self.cached_groups = Some(groups.clone());
+            self.cached_blocks_ptr = blocks_ptr;
+            // Reset list state when blocks change
+            self.list_state.reset(groups.len());
+            groups
+        };
+
         div()
-            .id("preview_scroll")
+            .id("preview_container")
             .flex_1()
             .min_w(px(0.))
             .min_h(px(0.))
@@ -50,10 +72,8 @@ impl Render for PreviewView {
             .p(px(18.))
             .text_sm()
             .text_color(Theme::text())
-            .overflow_y_scroll()
-            .overflow_x_hidden()
-            .scrollbar_width(px(10.))
-            .track_scroll(&self.scroll_handle)
+            .flex()
+            .flex_col()
             .track_focus(&focus_handle)
             .on_mouse_down(MouseButton::Left, {
                 let focus_handle = focus_handle.clone();
@@ -61,77 +81,48 @@ impl Render for PreviewView {
                     focus_handle.focus(window);
                 }
             })
-            .on_key_down({
-                let focus_handle = focus_handle.clone();
-                let scroll_handle = scroll_handle.clone();
-                move |event: &KeyDownEvent, window: &mut Window, _cx: &mut App| {
-                    if !focus_handle.is_focused(window) {
-                        return;
+            // Virtualized list - takes up all available space and handles its own scrolling
+            .child({
+                let grouped_for_list = grouped.clone();
+                list(self.list_state.clone(), move |ix, _window, _cx| {
+                    if let Some(group) = grouped_for_list.get(ix) {
+                        div()
+                            .w_full()
+                            .pb_3() // gap between blocks
+                            .child(render_block_group(group.clone(), None))
+                            .into_any_element()
+                    } else {
+                        div().into_any_element()
                     }
-
-                    let key = event.keystroke.key.to_lowercase();
-                    let modifiers = event.keystroke.modifiers;
-                    let is_cmd = modifiers.platform || modifiers.control;
-
-                    if is_cmd {
-                        return;
-                    }
-
-                    if key == "pageup" || key == "pagedown" {
-                        let max = scroll_handle.max_offset();
-                        let offset = scroll_handle.offset();
-                        let bounds = scroll_handle.bounds();
-                        let page = bounds.size.height;
-                        if page > px(0.) {
-                            let amount = page * 0.9;
-                            let delta = if key == "pagedown" { -amount } else { amount };
-                            let mut new_offset = offset;
-                            new_offset.y = (new_offset.y + delta).clamp(-max.height, px(0.));
-                            scroll_handle.set_offset(point(new_offset.x, new_offset.y));
-                            window.refresh();
-                        }
-                    }
-                }
+                })
+                .flex_1()
+                .size_full()
             })
-            .child(
-                div()
-                    .w_full()
-                    .min_w(px(0.))
-                    .flex()
-                    .flex_col()
-                    .gap_3()
-                    .children({
-                        let handle = scroll_handle_for_blocks.clone();
-                        group_blocks(blocks.as_ref().clone())
-                            .into_iter()
-                            .map(move |g| render_block_group(g, handle.clone()))
-                    })
-                    // Add footnotes section if there are footnotes
-                    .when(has_footnotes, |el| {
-                        el.child(
-                            // Horizontal rule separator
-                            div()
-                                .w_full()
-                                .h(px(1.))
-                                .bg(Theme::border())
-                                .my_3()
-                        )
-                        .child(
-                            // Footnotes container
-                            div()
-                                .id("footnotes_section")
-                                .flex()
-                                .flex_col()
-                                .gap_1()
-                                .children({
-                                    let handle = scroll_handle_for_footnotes.clone();
-                                    footnotes.as_ref().clone().into_iter().map(move |block| {
-                                        render_block(block, handle.clone())
-                                    })
-                                })
-                        )
-                    })
-            )
+            // Add footnotes section if there are footnotes (outside virtualized list)
+            .when(has_footnotes, |el| {
+                el.child(
+                    // Horizontal rule separator
+                    div()
+                        .w_full()
+                        .h(px(1.))
+                        .bg(Theme::border())
+                        .my_3()
+                )
+                .child(
+                    // Footnotes container
+                    div()
+                        .id("footnotes_section")
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .children({
+                            let handle = scroll_handle_for_footnotes.clone();
+                            footnotes.iter().cloned().map(move |block| {
+                                render_block(block, handle.clone())
+                            })
+                        })
+                )
+            })
     }
 }
 
@@ -490,6 +481,7 @@ fn split_runs(runs: Vec<InlineRun>) -> Vec<Vec<InlineRun>> {
 }
 
 /// Groups consecutive list items together for compact rendering
+#[derive(Clone)]
 enum BlockGroup {
     Single(Block),
     ListGroup(Vec<Block>),

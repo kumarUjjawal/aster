@@ -38,6 +38,8 @@ pub struct RootView {
     notifications: Entity<NotificationList>,
     preview_debounce: Debouncer<RootView>,
     view_mode: ViewMode,
+    /// Cached document text to avoid O(n) rope-to-string conversion every frame
+    cached_doc_text: Option<(u64, String)>,
 }
 
 impl RootView {
@@ -60,6 +62,7 @@ impl RootView {
             notifications,
             preview_debounce: Debouncer::new(Duration::from_millis(200)),
             view_mode: ViewMode::Split,
+            cached_doc_text: None,
         }
     }
 
@@ -324,16 +327,30 @@ impl Render for RootView {
             self.open_path(&path, window, cx);
         }
 
-        let (doc_path, doc_dirty, doc_revision, doc_text, word_count) = {
+        let (doc_path, doc_dirty, doc_revision, word_count) = {
             self.document.update(cx, |doc, _| {
                 (
                     doc.path.clone(),
                     doc.dirty,
                     doc.revision,
-                    doc.text(),
                     doc.get_word_count(),
                 )
             })
+        };
+
+        // Use cached text if revision hasn't changed to avoid O(n) rope conversion
+        let doc_text = if let Some((cached_rev, ref text)) = self.cached_doc_text {
+            if cached_rev == doc_revision {
+                text.clone()
+            } else {
+                let text = self.document.read(cx).text();
+                self.cached_doc_text = Some((doc_revision, text.clone()));
+                text
+            }
+        } else {
+            let text = self.document.read(cx).text();
+            self.cached_doc_text = Some((doc_revision, text.clone()));
+            text
         };
         let preview_rev = self.preview.read(cx).source_revision;
 
