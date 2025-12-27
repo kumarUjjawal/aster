@@ -27,7 +27,7 @@ url = "2.5.7"
 futures = "0.3.31"
 
 [package.metadata.bundle]
-identifier = "com.example.aster"
+identifier = "com.kumarujjawal.aster"
 name = "Aster"
 icon = ["resources/aster.icns"]
 category = "public.app-category.productivity"
