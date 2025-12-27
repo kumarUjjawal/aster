@@ -2,7 +2,7 @@ use crate::commands::{
     About, CloseWindow, Copy, Cut, NewFile, OpenFile, Paste, Quit, SaveFile, SaveFileAs, SelectAll,
 };
 use crate::services::assets::AsterAssetSource;
-use crate::services::fs::{pick_save_path, read_to_string, write_atomic};
+use crate::services::fs::{read_to_string, write_atomic};
 use crate::ui::root::RootView;
 use camino::Utf8PathBuf;
 use gpui::{
@@ -232,8 +232,16 @@ fn install_should_close_prompt(
 
             let mut save = || {
                 let current_path = document.read_with(cx, |d, _| d.path.clone());
-                let target = current_path.or_else(|| pick_save_path(None));
-                let Some(path) = target else {
+                // Only save if we have an existing path - avoid blocking file dialog
+                let Some(path) = current_path else {
+                    // No path - need to use Save As, which requires async dialog
+                    // Cancel the close and notify user to save first
+                    MessageDialog::new()
+                        .set_level(MessageLevel::Info)
+                        .set_title("Save required")
+                        .set_description("Please use Save As (Cmd+Shift+S) to save this file first.")
+                        .set_buttons(MessageButtons::Ok)
+                        .show();
                     return false;
                 };
 

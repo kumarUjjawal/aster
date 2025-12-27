@@ -24,6 +24,7 @@ tracing = "0.1.44"
 tracing-subscriber = "0.3.22"
 gpui-component = "0.4.0"
 url = "2.5.7"
+futures = "0.3.31"
 
 [package.metadata.bundle]
 identifier = "com.example.aster"

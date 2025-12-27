@@ -1,40 +1,42 @@
 use crate::error::{AppError, AppResult};
 use camino::Utf8PathBuf;
-use rfd::FileDialog;
+use futures::channel::oneshot;
+use gpui::{App, PathPromptOptions};
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 use tempfile::NamedTempFile;
 
-pub fn pick_open_path() -> Option<Utf8PathBuf> {
-    FileDialog::new()
-        .add_filter("Markdown", &["md", "markdown", "mdown"])
-        .pick_file()
-        .and_then(|p| Utf8PathBuf::try_from(p).ok())
+/// Async version of pick_open_path using GPUI's native dialog
+/// Returns a receiver that will contain the selected path
+pub fn pick_open_path_async(cx: &App) -> oneshot::Receiver<Result<Option<Vec<PathBuf>>>> {
+    cx.prompt_for_paths(PathPromptOptions {
+        files: true,
+        directories: false,
+        multiple: false,
+        prompt: None,
+    })
 }
 
-pub fn pick_save_path(default: Option<&Utf8PathBuf>) -> Option<Utf8PathBuf> {
-    let mut dialog = FileDialog::new().add_filter("Markdown", &["md", "markdown", "mdown"]);
-    if let Some(path) = default {
-        if let Some(parent) = path.parent() {
-            let parent_path = parent.as_std_path();
-            let mut dir: Option<PathBuf> = None;
-            if parent_path.is_absolute() {
-                dir = Some(parent_path.to_path_buf());
-            } else if let Ok(cwd) = std::env::current_dir() {
-                dir = Some(cwd.join(parent_path));
-            }
-            if let Some(dir) = dir.filter(|p| p.is_dir()) {
-                dialog = dialog.set_directory(dir);
-            }
-        }
-        dialog = dialog.set_file_name(path.file_name().unwrap_or("untitled.md"));
+/// Async version of pick_save_path using GPUI's native dialog
+/// Returns a receiver that will contain the selected path
+pub fn pick_save_path_async(
+    cx: &App,
+    default: Option<&Utf8PathBuf>,
+) -> oneshot::Receiver<Result<Option<PathBuf>>> {
+    let (directory, suggested_name) = if let Some(path) = default {
+        let dir = path
+            .parent()
+            .map(|p| p.as_std_path().to_path_buf())
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+        let name = path.file_name().unwrap_or("untitled.md");
+        (dir, Some(name))
     } else {
-        dialog = dialog.set_file_name("untitled.md");
-    }
-    dialog
-        .save_file()
-        .and_then(|p| Utf8PathBuf::try_from(p).ok())
+        let dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        (dir, Some("untitled.md"))
+    };
+
+    cx.prompt_for_new_path(&directory, suggested_name)
 }
 
 pub fn read_to_string(path: &Utf8PathBuf) -> AppResult<String> {
@@ -55,3 +57,6 @@ pub fn write_atomic(path: &Utf8PathBuf, contents: &str) -> AppResult<()> {
     tmp.persist(path).map_err(|e| AppError::Io(e.error))?;
     Ok(())
 }
+
+// Re-export Result for use with oneshot receivers
+pub use anyhow::Result;
