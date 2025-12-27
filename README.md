@@ -18,12 +18,19 @@
 
 Pre-built macOS applications are available for direct download:
 
-| Architecture | Download | Chip |
-|--------------|----------|------|
-| **Apple Silicon** | [Aster-arm64.app.zip](https://github.com/kumarujjawal/aster/releases/latest/download/Aster-arm64.app.zip)
-| **Intel** | [Aster-x86_64.app.zip](https://github.com/kumarujjawal/aster/releases/latest/download/Aster-x86_64.app.zip) 
+| Architecture | Download |
+|--------------|----------|
+| **Apple Silicon** (M1/M2/M3/M4) | [Aster-arm64.dmg](https://github.com/kumarujjawal/aster/releases/latest/download/Aster-arm64.dmg) |
+| **Intel** (Core i5/i7/i9) | [Aster-x86_64.dmg](https://github.com/kumarujjawal/aster/releases/latest/download/Aster-x86_64.dmg) |
 
-> **Note**: After downloading, unzip and drag Aster.app to your Applications folder. On first launch, you may need to right-click → Open to bypass Gatekeeper (the app is not notarized yet).
+### Installation
+
+1. Download the `.dmg` file for your Mac's architecture
+2. Double-click the DMG to mount it
+3. Drag **Aster.app** to your **Applications** folder
+4. Eject the DMG
+
+> **Note**: On first launch, you may need to right-click → **Open** to bypass Gatekeeper (the app is not notarized yet).
 
 ---
 
