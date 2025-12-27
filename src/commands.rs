@@ -9,6 +9,7 @@ actions!(
         Cut,
         NewFile,
         OpenFile,
+        OpenFolder,
         Paste,
         Quit,
         SaveFile,

@@ -1,8 +1,8 @@
-use crate::commands::{CloseWindow, NewFile, OpenFile, SaveFile, SaveFileAs};
+use crate::commands::{CloseWindow, NewFile, OpenFile, OpenFolder, SaveFile, SaveFileAs};
 use crate::model::document::DocumentState;
 use crate::model::file_tree::FileTreeState;
 use crate::model::preview::PreviewState;
-use crate::services::fs::{pick_open_path_async, pick_save_path_async, read_to_string, write_atomic};
+use crate::services::fs::{pick_folder_async, pick_open_path_async, pick_save_path_async, read_to_string, write_atomic};
 use crate::services::markdown::render_blocks;
 use crate::services::tasks::Debouncer;
 use crate::ui::editor::EditorView;
@@ -312,6 +312,23 @@ impl RootView {
         self.save_document(cx, true);
     }
 
+    fn action_open_folder(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        let receiver = pick_folder_async(cx);
+        let file_tree = self.file_tree.clone();
+        
+        cx.spawn(async move |_, cx| {
+            if let Ok(Ok(Some(paths))) = receiver.await {
+                if let Some(path) = paths.into_iter().next() {
+                    if let Ok(utf8_path) = Utf8PathBuf::try_from(path) {
+                        let _ = file_tree.update(cx, |tree, cx| {
+                            tree.set_root(utf8_path, cx);
+                        });
+                    }
+                }
+            }
+        }).detach();
+    }
+
     fn action_close_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.confirm_can_discard_changes(window, cx, "Save changes before closing?") {
             return;
@@ -502,6 +519,9 @@ impl Render for RootView {
             }))
             .on_action(cx.listener(|this, _: &OpenFile, window, cx| {
                 this.action_open_file(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &OpenFolder, window, cx| {
+                this.action_open_folder(window, cx);
             }))
             .on_action(cx.listener(|this, _: &SaveFile, window, cx| {
                 this.action_save(window, cx);

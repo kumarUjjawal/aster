@@ -18,6 +18,17 @@ pub fn pick_open_path_async(cx: &App) -> oneshot::Receiver<Result<Option<Vec<Pat
     })
 }
 
+/// Async version of pick_folder using GPUI's native dialog
+/// Returns a receiver that will contain the selected folder path
+pub fn pick_folder_async(cx: &App) -> oneshot::Receiver<Result<Option<Vec<PathBuf>>>> {
+    cx.prompt_for_paths(PathPromptOptions {
+        files: false,
+        directories: true,
+        multiple: false,
+        prompt: None,
+    })
+}
+
 /// Async version of pick_save_path using GPUI's native dialog
 /// Returns a receiver that will contain the selected path
 pub fn pick_save_path_async(

@@ -1,5 +1,5 @@
 use crate::commands::{
-    About, CloseWindow, Copy, Cut, NewFile, OpenFile, Paste, Quit, SaveFile, SaveFileAs, SelectAll,
+    About, CloseWindow, Copy, Cut, NewFile, OpenFile, OpenFolder, Paste, Quit, SaveFile, SaveFileAs, SelectAll,
 };
 use crate::services::assets::AsterAssetSource;
 use crate::services::fs::{read_to_string, write_atomic};
@@ -36,6 +36,7 @@ pub fn run() {
         cx.bind_keys([
             KeyBinding::new("cmd-n", NewFile, None),
             KeyBinding::new("cmd-o", OpenFile, None),
+            KeyBinding::new("shift-cmd-o", OpenFolder, None),
             KeyBinding::new("cmd-s", SaveFile, None),
             KeyBinding::new("shift-cmd-s", SaveFileAs, None),
             KeyBinding::new("cmd-w", CloseWindow, None),
@@ -62,6 +63,7 @@ pub fn run() {
                 items: vec![
                     MenuItem::action("New", NewFile),
                     MenuItem::action("Open…", OpenFile),
+                    MenuItem::action("Open Folder…", OpenFolder),
                     MenuItem::separator(),
                     MenuItem::action("Save", SaveFile),
                     MenuItem::action("Save As…", SaveFileAs),
