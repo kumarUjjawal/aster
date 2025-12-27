@@ -24,16 +24,19 @@ pub fn pick_save_path_async(
     cx: &App,
     default: Option<&Utf8PathBuf>,
 ) -> oneshot::Receiver<Result<Option<PathBuf>>> {
+    let home_dir = directories::UserDirs::new()
+        .map(|d| d.home_dir().to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("."));
+    
     let (directory, suggested_name) = if let Some(path) = default {
         let dir = path
             .parent()
             .map(|p| p.as_std_path().to_path_buf())
-            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+            .unwrap_or_else(|| home_dir.clone());
         let name = path.file_name().unwrap_or("untitled.md");
         (dir, Some(name))
     } else {
-        let dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        (dir, Some("untitled.md"))
+        (home_dir, Some("untitled.md"))
     };
 
     cx.prompt_for_new_path(&directory, suggested_name)

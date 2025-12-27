@@ -183,14 +183,8 @@ fn build_root_view(
     let preview_view = cx.new(|_| RootView::build_preview(preview.clone()));
     let file_explorer_view = cx.new(|_| RootView::build_file_explorer(file_tree.clone()));
 
-    // Initialize file tree with current working directory
-    if let Ok(cwd) = std::env::current_dir() {
-        if let Ok(utf8_cwd) = Utf8PathBuf::try_from(cwd) {
-            let _ = file_tree.update(cx, |tree, cx| {
-                tree.set_root(utf8_cwd, cx);
-            });
-        }
-    }
+    // File tree starts empty - user can open a folder explicitly
+    // (auto-initializing with home dir triggers macOS permission dialogs)
 
     if let Some(path) = initial_path.as_ref() {
         if let Ok(text) = read_to_string(path) {
