@@ -12,6 +12,10 @@
 
 **Aster** is a Markdown editor built in Rust on top of [GPUI](https://www.gpui.rs/), the GPU-accelerated UI framework from the [Zed](https://zed.dev/) team. It delivers a live split view: rope-backed editing on the left, formatted preview on the right. The goal is to create a fast and efficient markdown editor using GPU rendering. Why am I using `Rope` data structure? Because it is fast and provides several benefits over the regular `String`. If you want to learn more, check out this brilliant article by the `Zed` team: [Rope & SumTree](https://zed.dev/blog/zed-decoded-rope-sumtree). `Zed` uses their own version of `Rope` which isn't really a rope but a `SumTree`. Currently, I am using the regular `Rope` and if there are needs, I might switch to the `Zed` version. Why `gpui`? Because it's GPU accelerated (Metal on macOS) and it provides precise control over the layout, saving us from the hell that is virtual DOM.
 
+<p align="center">
+  <img src="./screensot-ui.png" alt="Aster Screenshot" width="800"/>
+</p>
+
 ---
 
 ## Download

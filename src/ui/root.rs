@@ -1,9 +1,10 @@
-use crate::commands::{CloseWindow, NewFile, OpenFile, OpenFolder, SaveFile, SaveFileAs};
+use crate::commands::{CloseWindow, FontSizeDecrease, FontSizeIncrease, FontSizeReset, NewFile, OpenFile, OpenFolder, SaveFile, SaveFileAs};
 use crate::model::document::DocumentState;
 use crate::model::file_tree::FileTreeState;
 use crate::model::preview::PreviewState;
 use crate::services::fs::{pick_folder_async, pick_open_path_async, pick_save_path_async, read_to_string, write_atomic};
 use crate::services::markdown::render_blocks;
+use crate::services::settings::{self, Settings};
 use crate::services::tasks::Debouncer;
 use crate::ui::editor::EditorView;
 use crate::ui::file_explorer::FileExplorerView;
@@ -40,6 +41,8 @@ pub struct RootView {
     view_mode: ViewMode,
     /// Cached document text to avoid O(n) rope-to-string conversion every frame
     cached_doc_text: Option<(u64, String)>,
+    /// Current font size in points (8-32)
+    font_size: f32,
 }
 
 impl RootView {
@@ -63,6 +66,7 @@ impl RootView {
             preview_debounce: Debouncer::new(Duration::from_millis(200)),
             view_mode: ViewMode::Split,
             cached_doc_text: None,
+            font_size: settings::get_font_size(),
         }
     }
 
@@ -531,6 +535,21 @@ impl Render for RootView {
             }))
             .on_action(cx.listener(|this, _: &CloseWindow, window, cx| {
                 this.action_close_window(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &FontSizeIncrease, _window, cx| {
+                this.font_size = Settings::clamp_font_size(this.font_size + Settings::FONT_SIZE_STEP);
+                settings::set_font_size(this.font_size);
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &FontSizeDecrease, _window, cx| {
+                this.font_size = Settings::clamp_font_size(this.font_size - Settings::FONT_SIZE_STEP);
+                settings::set_font_size(this.font_size);
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &FontSizeReset, _window, cx| {
+                this.font_size = Settings::DEFAULT_FONT_SIZE;
+                settings::set_font_size(this.font_size);
+                cx.notify();
             }))
             .child(
                 div()
