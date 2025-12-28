@@ -243,6 +243,7 @@ impl RootView {
                 let _ = self.document.update(cx, |d, cx| {
                     d.path = Some(path.clone());
                     d.set_text(&text);
+                    d.clear_undo_history();
                     d.save_snapshot();
                     cx.notify();
                 });
@@ -263,6 +264,7 @@ impl RootView {
         let _ = self.document.update(cx, |d, cx| {
             d.path = None;
             d.set_text("");
+            d.clear_undo_history();
             d.save_snapshot();
             cx.notify();
         });

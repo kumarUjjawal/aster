@@ -1,4 +1,4 @@
-use crate::commands::{Copy, Cut, Paste, SelectAll};
+use crate::commands::{Copy, Cut, Paste, Redo, SelectAll, Undo};
 use crate::model::document::DocumentState;
 use crate::services::settings;
 use crate::ui::theme::Theme;
@@ -166,7 +166,9 @@ impl Render for EditorView {
                         doc_handle.read_with(cx_app, |d, _| d.slice_chars(selection.clone()));
                     cx_app.write_to_clipboard(ClipboardItem::new_string(text));
                     let _ = doc_handle.update(cx_app, |doc, cx| {
+                        doc.begin_edit();
                         doc.delete_selection();
+                        doc.commit_edit();
                         cx.notify();
                     });
                 }
@@ -181,11 +183,33 @@ impl Render for EditorView {
                         return;
                     };
                     let _ = doc_handle.update(cx_app, |doc, cx| {
+                        doc.begin_edit();
                         doc.delete_selection();
                         let insert_at = doc.cursor;
                         doc.insert(insert_at, &text);
                         doc.cursor = insert_at.saturating_add(text.chars().count());
+                        doc.commit_edit();
                         cx.notify();
+                    });
+                }
+            })
+            .on_action({
+                let doc_handle = self.document.clone();
+                move |_: &Undo, _window: &mut Window, cx_app: &mut App| {
+                    let _ = doc_handle.update(cx_app, |doc, cx| {
+                        if doc.undo() {
+                            cx.notify();
+                        }
+                    });
+                }
+            })
+            .on_action({
+                let doc_handle = self.document.clone();
+                move |_: &Redo, _window: &mut Window, cx_app: &mut App| {
+                    let _ = doc_handle.update(cx_app, |doc, cx| {
+                        if doc.redo() {
+                            cx.notify();
+                        }
                     });
                 }
             })
@@ -276,7 +300,9 @@ impl Render for EditorView {
                         let len = doc.rope.len_chars();
                         match key.as_str() {
                             "backspace" => {
+                                doc.begin_edit();
                                 if doc.delete_selection().is_some() {
+                                    doc.commit_edit();
                                     cx_doc.notify();
                                     return;
                                 }
@@ -284,24 +310,30 @@ impl Render for EditorView {
                                     let start = doc.cursor.saturating_sub(1);
                                     doc.delete_range(start..doc.cursor);
                                     doc.cursor = start;
+                                    doc.commit_edit();
                                     cx_doc.notify();
                                 }
                             }
                             "delete" => {
+                                doc.begin_edit();
                                 if doc.delete_selection().is_some() {
+                                    doc.commit_edit();
                                     cx_doc.notify();
                                     return;
                                 }
                                 if doc.cursor < len {
                                     let end = (doc.cursor + 1).min(len);
                                     doc.delete_range(doc.cursor..end);
+                                    doc.commit_edit();
                                     cx_doc.notify();
                                 }
                             }
                             "enter" | "return" => {
+                                doc.begin_edit();
                                 doc.delete_selection();
                                 doc.insert(doc.cursor, "\n");
                                 doc.cursor += 1;
+                                doc.commit_edit();
                                 cx_doc.notify();
                             }
                             "left" | "arrowleft" => {
@@ -392,16 +424,20 @@ impl Render for EditorView {
                                     .and_then(|s| s.chars().next())
                                 {
                                     let insert = ch.to_string();
+                                    doc.begin_edit();
                                     doc.delete_selection();
                                     doc.insert(doc.cursor, &insert);
                                     doc.cursor =
                                         (doc.cursor).saturating_add(insert.chars().count());
+                                    doc.commit_edit();
                                     cx_doc.notify();
                                 } else if let Some(raw) = &event.keystroke.key_char {
                                     if raw == "\n" {
+                                        doc.begin_edit();
                                         doc.delete_selection();
                                         doc.insert(doc.cursor, "\n");
                                         doc.cursor += 1;
+                                        doc.commit_edit();
                                         cx_doc.notify();
                                     }
                                 }
