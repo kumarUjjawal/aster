@@ -10,6 +10,7 @@ use gpui_component::{IconName, IconNamed};
 pub struct FileExplorerView {
     file_tree: Entity<FileTreeState>,
     scroll_handle: ScrollHandle,
+    width: f32,
 }
 
 impl FileExplorerView {
@@ -17,7 +18,13 @@ impl FileExplorerView {
         Self {
             file_tree,
             scroll_handle: ScrollHandle::new(),
+            width: 200.0,
         }
+    }
+
+    pub fn set_width(&mut self, width: f32, cx: &mut gpui::Context<Self>) {
+        self.width = width;
+        cx.notify();
     }
 }
 
@@ -133,7 +140,7 @@ impl Render for FileExplorerView {
             .flex()
             .flex_col()
             .h_full()
-            .w(px(200.))
+            .w(px(self.width))
             .bg(Theme::sidebar())
             .border_r_1()
             .border_color(Theme::border())
