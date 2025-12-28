@@ -1,5 +1,5 @@
 use crate::commands::{
-    About, CloseWindow, Copy, Cut, NewFile, OpenFile, OpenFolder, Paste, Quit, SaveFile, SaveFileAs, SelectAll,
+    About, CloseWindow, Copy, Cut, NewFile, OpenFile, OpenFolder, Paste, Quit, Redo, SaveFile, SaveFileAs, SelectAll, Undo,
 };
 use crate::services::assets::AsterAssetSource;
 use crate::services::fs::{read_to_string, write_atomic};
@@ -41,6 +41,9 @@ pub fn run() {
             KeyBinding::new("shift-cmd-s", SaveFileAs, None),
             KeyBinding::new("cmd-w", CloseWindow, None),
             KeyBinding::new("cmd-q", Quit, None),
+            KeyBinding::new("cmd-z", Undo, None),
+            KeyBinding::new("shift-cmd-z", Redo, None),
+            KeyBinding::new("cmd-y", Redo, None),
             KeyBinding::new("cmd-x", Cut, None),
             KeyBinding::new("cmd-c", Copy, None),
             KeyBinding::new("cmd-v", Paste, None),
@@ -74,6 +77,9 @@ pub fn run() {
             Menu {
                 name: "Edit".into(),
                 items: vec![
+                    MenuItem::os_action("Undo", Undo, OsAction::Undo),
+                    MenuItem::os_action("Redo", Redo, OsAction::Redo),
+                    MenuItem::separator(),
                     MenuItem::os_action("Cut", Cut, OsAction::Cut),
                     MenuItem::os_action("Copy", Copy, OsAction::Copy),
                     MenuItem::os_action("Paste", Paste, OsAction::Paste),

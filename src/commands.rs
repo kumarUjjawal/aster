@@ -12,8 +12,10 @@ actions!(
         OpenFolder,
         Paste,
         Quit,
+        Redo,
         SaveFile,
         SaveFileAs,
         SelectAll,
+        Undo,
     ]
 );
