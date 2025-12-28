@@ -1,5 +1,6 @@
 use crate::commands::{
-    About, CloseWindow, Copy, Cut, NewFile, OpenFile, OpenFolder, Paste, Quit, Redo, SaveFile, SaveFileAs, SelectAll, Undo,
+    About, CloseWindow, Copy, Cut, FontSizeDecrease, FontSizeIncrease, FontSizeReset,
+    NewFile, OpenFile, OpenFolder, Paste, Quit, SaveFile, SaveFileAs, SelectAll,
 };
 use crate::services::assets::AsterAssetSource;
 use crate::services::fs::{read_to_string, write_atomic};
@@ -48,6 +49,9 @@ pub fn run() {
             KeyBinding::new("cmd-c", Copy, None),
             KeyBinding::new("cmd-v", Paste, None),
             KeyBinding::new("cmd-a", SelectAll, None),
+            KeyBinding::new("cmd-=", FontSizeIncrease, None),
+            KeyBinding::new("cmd--", FontSizeDecrease, None),
+            KeyBinding::new("cmd-0", FontSizeReset, None),
         ]);
 
         cx.set_menus(vec![
@@ -85,6 +89,14 @@ pub fn run() {
                     MenuItem::os_action("Paste", Paste, OsAction::Paste),
                     MenuItem::separator(),
                     MenuItem::os_action("Select All", SelectAll, OsAction::SelectAll),
+                ],
+            },
+            Menu {
+                name: "View".into(),
+                items: vec![
+                    MenuItem::action("Increase Font Size", FontSizeIncrease),
+                    MenuItem::action("Decrease Font Size", FontSizeDecrease),
+                    MenuItem::action("Reset Font Size", FontSizeReset),
                 ],
             },
         ]);

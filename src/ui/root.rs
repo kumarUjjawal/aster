@@ -1,9 +1,10 @@
-use crate::commands::{CloseWindow, NewFile, OpenFile, OpenFolder, SaveFile, SaveFileAs};
+use crate::commands::{CloseWindow, FontSizeDecrease, FontSizeIncrease, FontSizeReset, NewFile, OpenFile, OpenFolder, SaveFile, SaveFileAs};
 use crate::model::document::DocumentState;
 use crate::model::file_tree::FileTreeState;
 use crate::model::preview::PreviewState;
 use crate::services::fs::{pick_folder_async, pick_open_path_async, pick_save_path_async, read_to_string, write_atomic};
 use crate::services::markdown::render_blocks;
+use crate::services::settings::{self, Settings};
 use crate::services::tasks::Debouncer;
 use crate::ui::editor::EditorView;
 use crate::ui::file_explorer::FileExplorerView;
@@ -13,8 +14,8 @@ use crate::ui::theme::Theme;
 use camino::Utf8PathBuf;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    Context, Entity, InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement,
-    Render, Styled, Window, div, px, svg,
+    Context, Entity, InteractiveElement, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent,
+    ParentElement, Render, Styled, Window, div, px, svg,
 };
 use gpui_component::{IconName, IconNamed};
 use gpui_component::notification::NotificationList;
@@ -40,6 +41,12 @@ pub struct RootView {
     view_mode: ViewMode,
     /// Cached document text to avoid O(n) rope-to-string conversion every frame
     cached_doc_text: Option<(u64, String)>,
+    /// Current font size in points (8-32)
+    font_size: f32,
+    /// Current sidebar width in pixels
+    sidebar_width: f32,
+    /// Whether we're currently resizing the sidebar
+    resizing_sidebar: bool,
 }
 
 impl RootView {
@@ -63,6 +70,9 @@ impl RootView {
             preview_debounce: Debouncer::new(Duration::from_millis(200)),
             view_mode: ViewMode::Split,
             cached_doc_text: None,
+            font_size: settings::get_font_size(),
+            sidebar_width: 200.0,
+            resizing_sidebar: false,
         }
     }
 
@@ -534,6 +544,40 @@ impl Render for RootView {
             .on_action(cx.listener(|this, _: &CloseWindow, window, cx| {
                 this.action_close_window(window, cx);
             }))
+            .on_action(cx.listener(|this, _: &FontSizeIncrease, _window, cx| {
+                this.font_size = Settings::clamp_font_size(this.font_size + Settings::FONT_SIZE_STEP);
+                settings::set_font_size(this.font_size);
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &FontSizeDecrease, _window, cx| {
+                this.font_size = Settings::clamp_font_size(this.font_size - Settings::FONT_SIZE_STEP);
+                settings::set_font_size(this.font_size);
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &FontSizeReset, _window, cx| {
+                this.font_size = Settings::DEFAULT_FONT_SIZE;
+                settings::set_font_size(this.font_size);
+                cx.notify();
+            }))
+            // Handle sidebar resize drag at root level so we don't lose events
+            .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
+                if !this.resizing_sidebar {
+                    return;
+                }
+                let new_width: f32 = event.position.x.into();
+                let clamped = new_width.clamp(100.0, 400.0);
+                this.sidebar_width = clamped;
+                cx.notify();
+            }))
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|this, _, _, cx| {
+                    if this.resizing_sidebar {
+                        this.resizing_sidebar = false;
+                        cx.notify();
+                    }
+                }),
+            )
             .child(
                 div()
                     .flex_1()
@@ -541,7 +585,32 @@ impl Render for RootView {
                     .min_w(px(0.))
                     .flex()
                     .flex_row()
-                    .child(self.file_explorer_view.clone())
+                    .child({
+                        // Update the file explorer width to match our state
+                        let fe = self.file_explorer_view.clone();
+                        let width = self.sidebar_width;
+                        let _ = fe.update(cx, |view, cx| {
+                            view.set_width(width, cx);
+                        });
+                        fe
+                    })
+                    // Resize handle
+                    .child(
+                        div()
+                            .id("sidebar-resize-handle")
+                            .w(px(4.))
+                            .h_full()
+                            .cursor_col_resize()
+                            .bg(gpui::transparent_black())
+                            .hover(|s| s.bg(gpui::hsla(0.0, 0.0, 0.5, 0.3)))
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, _: &MouseDownEvent, _, cx| {
+                                    this.resizing_sidebar = true;
+                                    cx.notify();
+                                }),
+                            ),
+                    )
                     .child(
                         div()
                             .flex_1()
