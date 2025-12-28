@@ -1,5 +1,6 @@
 use crate::commands::{Copy, Cut, Paste, SelectAll};
 use crate::model::document::DocumentState;
+use crate::services::settings;
 use crate::ui::theme::Theme;
 use gpui::{
     App, Bounds, ClipboardItem, Context, Entity, FocusHandle, Focusable, HighlightStyle,
@@ -123,7 +124,7 @@ impl Render for EditorView {
             .min_h(px(0.))
             .bg(Theme::panel())
             .p(px(18.))
-            .text_sm()
+            .text_size(px(settings::get_font_size()))
             .text_color(Theme::text())
             .font_family("Menlo")
             .overflow_y_scroll()

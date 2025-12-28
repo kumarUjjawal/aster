@@ -1,5 +1,6 @@
 use crate::model::preview::PreviewState;
 use crate::services::markdown::{Block, InlineRun, TableCell, TableRow};
+use crate::services::settings;
 use crate::ui::theme::Theme;
 use gpui::{
     prelude::FluentBuilder, list, App, ClickEvent, Context, CursorStyle, Entity, FocusHandle, FontWeight,
@@ -70,7 +71,7 @@ impl Render for PreviewView {
             .min_h(px(0.))
             .bg(Theme::panel_alt())
             .p(px(18.))
-            .text_sm()
+            .text_size(px(settings::get_font_size()))
             .text_color(Theme::text())
             .flex()
             .flex_col()
