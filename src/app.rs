@@ -1,6 +1,6 @@
 use crate::commands::{
     About, CloseWindow, Copy, Cut, FontSizeDecrease, FontSizeIncrease, FontSizeReset,
-    NewFile, OpenFile, OpenFolder, Paste, Quit, SaveFile, SaveFileAs, SelectAll,
+    NewFile, OpenFile, OpenFolder, Paste, Quit, Redo, SaveFile, SaveFileAs, SelectAll, Undo,
 };
 use crate::services::assets::AsterAssetSource;
 use crate::services::fs::{read_to_string, write_atomic};
