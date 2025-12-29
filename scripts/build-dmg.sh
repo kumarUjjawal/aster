@@ -19,6 +19,23 @@ echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━�
 echo -e "${BLUE}  Building ${APP_NAME} v${VERSION} DMG Installer${NC}"
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
+# Get cargo target directory (respects CARGO_TARGET_DIR and .cargo/config.toml)
+get_target_dir() {
+    # Check if cargo can tell us
+    if command -v cargo &> /dev/null; then
+        local target_dir=$(cargo metadata --format-version=1 2>/dev/null | grep -o '"target_directory":"[^"]*"' | cut -d'"' -f4)
+        if [ -n "$target_dir" ]; then
+            echo "$target_dir"
+            return
+        fi
+    fi
+    # Fallback to default
+    echo "target"
+}
+
+TARGET_DIR=$(get_target_dir)
+echo -e "${YELLOW}Target directory: ${TARGET_DIR}${NC}"
+
 # Determine target architecture
 ARCH="${1:-$(uname -m)}"
 
@@ -39,13 +56,21 @@ case "$ARCH" in
         "$0" x86_64
         
         echo -e "\n${BLUE}Creating universal DMG...${NC}"
-        # Create universal app by combining both
-        ARM_APP="target/aarch64-apple-darwin/release/bundle/osx/${APP_NAME}.app"
-        X86_APP="target/x86_64-apple-darwin/release/bundle/osx/${APP_NAME}.app"
-        UNIVERSAL_APP="target/universal/${APP_NAME}.app"
         
-        rm -rf "target/universal"
-        mkdir -p "target/universal"
+        # Find the app bundles
+        ARM_APP=$(find "$TARGET_DIR" -path "*aarch64-apple-darwin/release/bundle/osx/${APP_NAME}.app" -type d 2>/dev/null | head -1)
+        X86_APP=$(find "$TARGET_DIR" -path "*x86_64-apple-darwin/release/bundle/osx/${APP_NAME}.app" -type d 2>/dev/null | head -1)
+        
+        if [ -z "$ARM_APP" ] || [ -z "$X86_APP" ]; then
+            echo -e "${RED}Error: Could not find both architecture builds${NC}"
+            exit 1
+        fi
+        
+        UNIVERSAL_DIR="${TARGET_DIR}/universal"
+        UNIVERSAL_APP="${UNIVERSAL_DIR}/${APP_NAME}.app"
+        
+        rm -rf "$UNIVERSAL_DIR"
+        mkdir -p "$UNIVERSAL_DIR"
         cp -R "$ARM_APP" "$UNIVERSAL_APP"
         
         # Create universal binary using lipo
@@ -55,7 +80,7 @@ case "$ARCH" in
             -output "$UNIVERSAL_APP/Contents/MacOS/aster"
         
         # Create universal DMG
-        create_dmg "target/universal" "universal"
+        create_dmg "$UNIVERSAL_DIR" "universal"
         exit 0
         ;;
     *)
@@ -91,7 +116,7 @@ create_dmg() {
     local SUFFIX="$2"
     local DMG_NAME="${APP_NAME}-${SUFFIX}.dmg"
     local APP_PATH="${APP_DIR}/${APP_NAME}.app"
-    local DMG_TEMP="target/dmg-temp"
+    local DMG_TEMP="${TARGET_DIR}/dmg-temp"
     
     echo -e "\n${BLUE}[4/4] Creating DMG: ${DMG_NAME}...${NC}"
     
@@ -125,8 +150,18 @@ create_dmg() {
     echo -e "${GREEN}✓ Created: ${DMG_NAME} (${DMG_SIZE})${NC}"
 }
 
+# Find the bundle directory (handles custom CARGO_TARGET_DIR)
+BUNDLE_DIR=$(find "$TARGET_DIR" -path "*${RUST_TARGET}/release/bundle/osx" -type d 2>/dev/null | head -1)
+
+if [ -z "$BUNDLE_DIR" ] || [ ! -d "$BUNDLE_DIR/${APP_NAME}.app" ]; then
+    echo -e "${RED}Error: Could not find app bundle at expected location${NC}"
+    echo "Searched in: ${TARGET_DIR}"
+    exit 1
+fi
+
+echo -e "${YELLOW}Found bundle at: ${BUNDLE_DIR}${NC}"
+
 # Create DMG
-BUNDLE_DIR="target/${RUST_TARGET}/release/bundle/osx"
 create_dmg "$BUNDLE_DIR" "$DMG_SUFFIX"
 
 echo -e "\n${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
