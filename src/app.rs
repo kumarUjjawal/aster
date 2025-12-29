@@ -7,8 +7,8 @@ use crate::services::fs::{read_to_string, write_atomic};
 use crate::ui::root::RootView;
 use camino::Utf8PathBuf;
 use gpui::{
-    App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem, OsAction, SystemMenuType,
-    Window, WindowBounds, WindowOptions, px, size,
+    App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem, OsAction, Pixels, SystemMenuType,
+    Window, WindowBounds, WindowOptions,
 };
 use gpui_component::notification::NotificationList;
 use rfd::{MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
@@ -179,10 +179,9 @@ pub fn run() {
 }
 
 fn open_window(cx: &mut App, initial_path: Option<Utf8PathBuf>) -> anyhow::Result<()> {
-    let bounds = Bounds::centered(None, size(px(900.), px(650.)), cx);
     cx.open_window(
         WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(bounds)),
+            window_bounds: Some(WindowBounds::Maximized(Bounds::<Pixels>::default())),
             ..Default::default()
         },
         |window, cx| build_root_view(window, cx, initial_path.clone()),
