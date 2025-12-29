@@ -97,16 +97,36 @@ The `.app` will be created at `target/release/bundle/osx/Aster.app`.
 
 ## Cross-Architecture Builds
 
-To build for both Apple Silicon and Intel Macs:
+### Using the Build Script (Recommended)
 
-### For Apple Silicon (M1/M2/M3/M4):
+The easiest way to create distributable DMG files:
+
+```bash
+# Build for your current architecture
+./scripts/build-dmg.sh
+
+# Build specifically for Apple Silicon
+./scripts/build-dmg.sh arm64
+
+# Build specifically for Intel
+./scripts/build-dmg.sh x86_64
+
+# Build universal binary (both architectures)
+./scripts/build-dmg.sh universal
+```
+
+The DMG files will be created in the project root directory.
+
+### Manual Build
+
+For Apple Silicon (M1/M2/M3/M4):
 
 ```bash
 rustup target add aarch64-apple-darwin
 cargo bundle --release --target aarch64-apple-darwin
 ```
 
-### For Intel Macs:
+For Intel Macs:
 
 ```bash
 rustup target add x86_64-apple-darwin
