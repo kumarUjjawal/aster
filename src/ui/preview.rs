@@ -69,6 +69,7 @@ impl Render for PreviewView {
             .flex_1()
             .min_w(px(0.))
             .min_h(px(0.))
+            .overflow_hidden() // Prevent content from overflowing container bounds
             .bg(Theme::panel_alt())
             .p(px(18.))
             .text_size(px(settings::get_font_size()))
@@ -89,6 +90,7 @@ impl Render for PreviewView {
                     if let Some(group) = grouped_for_list.get(ix) {
                         div()
                             .w_full()
+                            .overflow_x_hidden() // Constrain text within container bounds
                             .pb_3() // gap between blocks
                             .child(render_block_group(group.clone(), None))
                             .into_any_element()
@@ -381,12 +383,14 @@ fn render_inline_runs(runs: Vec<InlineRun>) -> impl IntoElement {
     div()
         .w_full()
         .min_w(px(0.))
+        .overflow_x_hidden() // Constrain text to container width
         .flex()
         .flex_col()
         .children(lines.into_iter().map(|line| {
             div()
                 .w_full()
                 .min_w(px(0.))
+                .overflow_x_hidden() // Constrain text line to container width
                 .flex()
                 .flex_row()
                 .flex_wrap()
@@ -424,7 +428,7 @@ fn render_inline_run(r: InlineRun) -> impl IntoElement {
     if let Some(ref url) = r.link {
         let url_for_click = url.clone();
         let link_id = LINK_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
-        let base = apply_base_styles(div().w_full().min_w(px(0.)).child(SharedString::from(text)));
+        let base = apply_base_styles(div().child(SharedString::from(text)));
         return base
             .id(SharedString::from(format!("link_{}", link_id)))
             .text_color(Theme::accent())
@@ -437,7 +441,7 @@ fn render_inline_run(r: InlineRun) -> impl IntoElement {
     }
 
     // Non-link runs
-    apply_base_styles(div().w_full().min_w(px(0.)).child(SharedString::from(text))).into_any_element()
+    apply_base_styles(div().child(SharedString::from(text))).into_any_element()
 }
 
 /// Opens a URL in the system's default browser.

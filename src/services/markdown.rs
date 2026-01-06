@@ -58,6 +58,30 @@ impl InlineRun {
             link,
         }
     }
+
+    /// Check if two runs can be merged (same styling)
+    fn can_merge(&self, other: &InlineRun) -> bool {
+        self.bold == other.bold
+            && self.italic == other.italic
+            && self.code == other.code
+            && self.link == other.link
+    }
+}
+
+/// Merge consecutive runs with identical styling into single runs.
+/// This prevents text from breaking mid-word when rendered as flex items.
+fn merge_runs(runs: Vec<InlineRun>) -> Vec<InlineRun> {
+    let mut merged: Vec<InlineRun> = Vec::with_capacity(runs.len());
+    for run in runs {
+        if let Some(last) = merged.last_mut() {
+            if last.can_merge(&run) {
+                last.text.push_str(&run.text);
+                continue;
+            }
+        }
+        merged.push(run);
+    }
+    merged
 }
 
 pub fn render_blocks(source: &str) -> ParsedDocument {
@@ -66,7 +90,9 @@ pub fn render_blocks(source: &str) -> ParsedDocument {
     options.insert(Options::ENABLE_TABLES);
     options.insert(Options::ENABLE_TASKLISTS);
     options.insert(Options::ENABLE_FOOTNOTES);
-    options.insert(Options::ENABLE_SMART_PUNCTUATION);
+    // Note: ENABLE_SMART_PUNCTUATION is intentionally disabled because it splits
+    // text at apostrophes (e.g., "platform's" becomes separate text events)
+    // which causes inline runs to break incorrectly in the preview.
     let parser = Parser::new_ext(source, options);
 
     let mut blocks = Vec::new();
@@ -110,14 +136,15 @@ pub fn render_blocks(source: &str) -> ParsedDocument {
         if runs.is_empty() {
             return;
         }
+        // Merge consecutive runs with same styling to prevent text breaking mid-word
+        let merged = merge_runs(std::mem::take(runs));
         let block = match kind {
-            BlockKind::Paragraph => Block::Paragraph(runs.clone()),
-            BlockKind::Heading(level) => Block::Heading(level, runs.clone()),
-            BlockKind::ListItem => Block::ListItem(runs.clone()),
-            BlockKind::Quote => Block::Quote(runs.clone()),
+            BlockKind::Paragraph => Block::Paragraph(merged),
+            BlockKind::Heading(level) => Block::Heading(level, merged),
+            BlockKind::ListItem => Block::ListItem(merged),
+            BlockKind::Quote => Block::Quote(merged),
         };
         target.push(block);
-        runs.clear();
     };
 
     for event in parser {
@@ -179,18 +206,16 @@ pub fn render_blocks(source: &str) -> ParsedDocument {
                     if !runs.is_empty() {
                         blocks.push(Block::TaskListItem {
                             checked,
-                            content: runs.clone(),
+                            content: merge_runs(std::mem::take(&mut runs)),
                         });
-                        runs.clear();
                     }
                 } else if let Some(ref mut counter) = ordered_list_counter {
                     // Ordered list item
                     if !runs.is_empty() {
                         blocks.push(Block::OrderedListItem {
                             number: *counter,
-                            content: runs.clone(),
+                            content: merge_runs(std::mem::take(&mut runs)),
                         });
-                        runs.clear();
                     }
                     *counter += 1;
                 } else {
@@ -224,8 +249,7 @@ pub fn render_blocks(source: &str) -> ParsedDocument {
             // Footnote definition end
             Event::End(TagEnd::FootnoteDefinition) => {
                 if let Some(label) = current_footnote_def.take() {
-                    footnote_definitions.insert(label, footnote_runs.clone());
-                    footnote_runs.clear();
+                    footnote_definitions.insert(label, merge_runs(std::mem::take(&mut footnote_runs)));
                 }
             }
             // Footnote reference [^label]
@@ -353,8 +377,8 @@ pub fn render_blocks(source: &str) -> ParsedDocument {
                     blocks.push(Block::Image { alt, src });
                 }
             }
-            Event::HardBreak | Event::SoftBreak => {
-                // If inside a footnote definition, add to footnote_runs
+            Event::HardBreak => {
+                // Hard break (two spaces + newline, or backslash + newline) creates actual line break
                 if current_footnote_def.is_some() {
                     footnote_runs.push(InlineRun::new(
                         "\n".to_string(),
@@ -367,6 +391,26 @@ pub fn render_blocks(source: &str) -> ParsedDocument {
                 }
                 runs.push(InlineRun::new(
                     "\n".to_string(),
+                    bold_stack > 0,
+                    italic_stack > 0,
+                    false,
+                    link_stack.last().cloned(),
+                ));
+            }
+            Event::SoftBreak => {
+                // Soft break (single newline in source) renders as space in Markdown
+                if current_footnote_def.is_some() {
+                    footnote_runs.push(InlineRun::new(
+                        " ".to_string(),
+                        bold_stack > 0,
+                        italic_stack > 0,
+                        false,
+                        link_stack.last().cloned(),
+                    ));
+                    continue;
+                }
+                runs.push(InlineRun::new(
+                    " ".to_string(),
                     bold_stack > 0,
                     italic_stack > 0,
                     false,
@@ -403,7 +447,7 @@ pub fn render_blocks(source: &str) -> ParsedDocument {
             }
             Event::End(TagEnd::TableCell) => {
                 current_table_row.push(TableCell {
-                    content: std::mem::take(&mut current_cell_runs),
+                    content: merge_runs(std::mem::take(&mut current_cell_runs)),
                     is_header: in_table_head,
                 });
             }
