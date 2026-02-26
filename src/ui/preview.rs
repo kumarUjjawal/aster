@@ -3,10 +3,11 @@ use crate::services::markdown::{Block, InlineRun, TableCell, TableRow};
 use crate::services::settings;
 use crate::ui::theme::Theme;
 use gpui::{
-    prelude::FluentBuilder, list, App, ClickEvent, Context, CursorStyle, Entity, FocusHandle, FontWeight,
-    InteractiveElement, IntoElement, ListAlignment, ListState, MouseButton, MouseDownEvent, ObjectFit,
-    ParentElement, Render, ScrollHandle, SharedString, SharedUri, StatefulInteractiveElement,
-    Styled, StyledImage, Window, div, img, px,
+    div, img, list, prelude::FluentBuilder, px, App, ClickEvent, Context, CursorStyle, Entity,
+    FocusHandle, FontStyle, FontWeight, HighlightStyle, InteractiveElement, IntoElement,
+    ListAlignment, ListState, MouseButton, MouseDownEvent, ObjectFit, ParentElement, Render,
+    ScrollHandle, SharedString, SharedUri, StatefulInteractiveElement, Styled, StyledImage,
+    StyledText, UnderlineStyle, Window,
 };
 use std::sync::Arc;
 
@@ -105,11 +106,7 @@ impl Render for PreviewView {
             .when(has_footnotes, |el| {
                 el.child(
                     // Horizontal rule separator
-                    div()
-                        .w_full()
-                        .h(px(1.))
-                        .bg(Theme::border())
-                        .my_3()
+                    div().w_full().h(px(1.)).bg(Theme::border()).my_3(),
                 )
                 .child(
                     // Footnotes container
@@ -120,10 +117,11 @@ impl Render for PreviewView {
                         .gap_1()
                         .children({
                             let handle = scroll_handle_for_footnotes.clone();
-                            footnotes.iter().cloned().map(move |block| {
-                                render_block(block, handle.clone())
-                            })
-                        })
+                            footnotes
+                                .iter()
+                                .cloned()
+                                .map(move |block| render_block(block, handle.clone()))
+                        }),
                 )
             })
     }
@@ -149,7 +147,11 @@ fn render_block(block: Block, scroll_handle: Option<ScrollHandle>) -> gpui::AnyE
             };
             el.child(render_inline_runs(runs)).into_any_element()
         }
-        Block::Paragraph(runs) => div().w_full().min_w(px(0.)).child(render_inline_runs(runs)).into_any_element(),
+        Block::Paragraph(runs) => div()
+            .w_full()
+            .min_w(px(0.))
+            .child(render_inline_runs(runs))
+            .into_any_element(),
         Block::ListItem(runs) => div()
             .flex()
             .items_start()
@@ -180,22 +182,21 @@ fn render_block(block: Block, scroll_handle: Option<ScrollHandle>) -> gpui::AnyE
         Block::Image { alt, src } => render_image_block(alt, src),
         Block::TaskListItem { checked, content } => {
             let checkbox = if checked {
-                div()
-                    .text_lg()
-                    .text_color(Theme::accent())
-                    .child("☑")
+                div().text_lg().text_color(Theme::accent()).child("☑")
             } else {
-                div()
-                    .text_lg()
-                    .text_color(Theme::muted())
-                    .child("☐")
+                div().text_lg().text_color(Theme::muted()).child("☐")
             };
             div()
                 .flex()
                 .items_start()
                 .gap_2()
                 .child(checkbox)
-                .child(div().flex_1().min_w(px(0.)).child(render_inline_runs(content)))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w(px(0.))
+                        .child(render_inline_runs(content)),
+                )
                 .into_any_element()
         }
         Block::OrderedListItem { number, content } => div()
@@ -207,7 +208,12 @@ fn render_block(block: Block, scroll_handle: Option<ScrollHandle>) -> gpui::AnyE
                     .text_color(Theme::accent())
                     .child(SharedString::from(format!("{}.", number))),
             )
-            .child(div().flex_1().min_w(px(0.)).child(render_inline_runs(content)))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.))
+                    .child(render_inline_runs(content)),
+            )
             .into_any_element(),
         Block::FootnoteRef { label, index } => {
             // Render as superscript number that links to definition
@@ -228,7 +234,11 @@ fn render_block(block: Block, scroll_handle: Option<ScrollHandle>) -> gpui::AnyE
                 })
                 .into_any_element()
         }
-        Block::FootnoteDefinition { label, index, content } => {
+        Block::FootnoteDefinition {
+            label,
+            index,
+            content,
+        } => {
             // Render footnote definition with number and backlink
             let scroll_handle_clone = scroll_handle.clone();
             let label_clone = label.clone();
@@ -242,14 +252,14 @@ fn render_block(block: Block, scroll_handle: Option<ScrollHandle>) -> gpui::AnyE
                         .text_xs()
                         .text_color(Theme::accent())
                         .font_weight(FontWeight::BOLD)
-                        .child(SharedString::from(format!("{}.", index)))
+                        .child(SharedString::from(format!("{}.", index))),
                 )
                 .child(
                     div()
                         .flex_1()
                         .min_w(px(0.))
                         .text_sm()
-                        .child(render_inline_runs(content))
+                        .child(render_inline_runs(content)),
                 )
                 .child(
                     div()
@@ -259,11 +269,13 @@ fn render_block(block: Block, scroll_handle: Option<ScrollHandle>) -> gpui::AnyE
                         .cursor_pointer()
                         .child("↩")
                         .when_some(scroll_handle_clone, move |el, _handle| {
-                            el.on_click(move |_: &ClickEvent, _window: &mut Window, _cx: &mut App| {
-                                // TODO: Scroll back to reference when GPUI supports scroll_to_item by ID
-                                let _ = &label_clone;
-                            })
-                        })
+                            el.on_click(
+                                move |_: &ClickEvent, _window: &mut Window, _cx: &mut App| {
+                                    // TODO: Scroll back to reference when GPUI supports scroll_to_item by ID
+                                    let _ = &label_clone;
+                                },
+                            )
+                        }),
                 )
                 .into_any_element()
         }
@@ -304,19 +316,22 @@ fn render_image_block(alt: String, src: String) -> gpui::AnyElement {
                     .text_xs()
                     .text_color(Theme::muted())
                     .italic()
-                    .child(SharedString::from(alt))
+                    .child(SharedString::from(alt)),
             )
         })
         .into_any_element()
 }
 
 /// Renders a GFM table with borders, header styling, and column alignment.
-fn render_table(alignments: Vec<pulldown_cmark::Alignment>, rows: Vec<TableRow>) -> gpui::AnyElement {
+fn render_table(
+    alignments: Vec<pulldown_cmark::Alignment>,
+    rows: Vec<TableRow>,
+) -> gpui::AnyElement {
     use pulldown_cmark::Alignment;
-    
+
     div()
         .w_full()
-        .overflow_x_hidden()
+        // Note: Horizontal scrolling would require an ID for StatefulInteractiveElement
         .child(
             div()
                 .flex()
@@ -324,79 +339,160 @@ fn render_table(alignments: Vec<pulldown_cmark::Alignment>, rows: Vec<TableRow>)
                 .border_1()
                 .border_color(Theme::border())
                 .rounded(px(4.))
-                .overflow_hidden()
                 .children(rows.into_iter().enumerate().map(|(row_idx, row)| {
                     let is_header = row.cells.first().map(|c| c.is_header).unwrap_or(false);
                     let alignments = alignments.clone();
-                    
+
                     div()
                         .flex()
                         .flex_row()
                         .when(is_header, |el| {
-                            el.bg(Theme::border())
-                                .font_weight(FontWeight::BOLD)
+                            el.bg(Theme::border()).font_weight(FontWeight::BOLD)
                         })
                         .when(row_idx > 0, |el| {
-                            el.border_t_1()
-                                .border_color(Theme::border())
+                            el.border_t_1().border_color(Theme::border())
                         })
                         .children(row.cells.into_iter().enumerate().map({
                             let alignments = alignments.clone();
                             move |(col_idx, cell)| {
-                                let alignment = alignments.get(col_idx).copied().unwrap_or(Alignment::None);
+                                let alignment =
+                                    alignments.get(col_idx).copied().unwrap_or(Alignment::None);
                                 render_table_cell(cell, alignment, col_idx > 0)
                             }
                         }))
-                }))
+                })),
         )
         .into_any_element()
 }
 
 /// Renders a single table cell with alignment and border.
-fn render_table_cell(cell: TableCell, alignment: pulldown_cmark::Alignment, has_left_border: bool) -> gpui::AnyElement {
+fn render_table_cell(
+    cell: TableCell,
+    alignment: pulldown_cmark::Alignment,
+    has_left_border: bool,
+) -> gpui::AnyElement {
     use pulldown_cmark::Alignment;
-    
+
     let mut el = div()
         .flex_1()
-        .min_w(px(60.))
+        .min_w(px(100.)) // Wider minimum to prevent excessive text squishing
+        .max_w(px(400.)) // Cap max width so cells don't get too wide
         .px(px(8.))
         .py(px(6.));
-    
+
     // Add left border for non-first columns
     if has_left_border {
         el = el.border_l_1().border_color(Theme::border());
     }
-    
+
     // Apply text alignment
     el = match alignment {
         Alignment::Left | Alignment::None => el,
         Alignment::Center => el.flex().justify_center(),
         Alignment::Right => el.flex().justify_end(),
     };
-    
+
     el.child(render_inline_runs(cell.content))
         .into_any_element()
 }
 
-fn render_inline_runs(runs: Vec<InlineRun>) -> impl IntoElement {
+fn render_inline_runs(runs: Vec<InlineRun>) -> gpui::AnyElement {
     let lines = split_runs(runs);
     div()
         .w_full()
         .min_w(px(0.))
-        .overflow_x_hidden() // Constrain text to container width
         .flex()
         .flex_col()
-        .children(lines.into_iter().map(|line| {
-            div()
-                .w_full()
-                .min_w(px(0.))
-                .overflow_x_hidden() // Constrain text line to container width
-                .flex()
-                .flex_row()
-                .flex_wrap()
-                .items_baseline()
-                .children(line.into_iter().map(render_inline_run))
-        }))
+        .children(lines.into_iter().map(render_inline_line))
+        .into_any_element()
+}
+
+fn render_inline_line(line: Vec<InlineRun>) -> gpui::AnyElement {
+    // Keep the interactive rendering path for links so click handlers continue to work.
+    if line.iter().any(|run| run.link.is_some()) {
+        return div()
+            .w_full()
+            .min_w(px(0.))
+            .flex()
+            .flex_row()
+            .flex_wrap()
+            .items_baseline()
+            .gap_0()
+            .children(line.into_iter().map(render_inline_run))
+            .into_any_element();
+    }
+
+    // For non-link text, render as a single StyledText with highlights.
+    // This lets GPUI wrap naturally and prevents punctuation/quotes/brackets
+    // from being forced onto their own flex-item lines.
+    let mut text = String::new();
+    let mut highlights = Vec::new();
+
+    for run in line {
+        if run.text.is_empty() {
+            continue;
+        }
+        let start = text.len();
+        text.push_str(&run.text);
+        let end = text.len();
+
+        if start == end {
+            continue;
+        }
+
+        if let Some(style) = highlight_for_run(&run) {
+            highlights.push((start..end, style));
+        }
+    }
+
+    let styled_text = if highlights.is_empty() {
+        StyledText::new(text)
+    } else {
+        StyledText::new(text).with_highlights(highlights)
+    };
+
+    div()
+        .w_full()
+        .min_w(px(0.))
+        .child(styled_text)
+        .into_any_element()
+}
+
+fn highlight_for_run(run: &InlineRun) -> Option<HighlightStyle> {
+    let mut style = HighlightStyle::default();
+    let mut has_style = false;
+
+    if run.bold {
+        style.font_weight = Some(FontWeight::BOLD);
+        has_style = true;
+    }
+
+    if run.italic {
+        style.font_style = Some(FontStyle::Italic);
+        has_style = true;
+    }
+
+    if run.code {
+        style.background_color = Some(Theme::border().into());
+        has_style = true;
+    }
+
+    if run.link.is_some() {
+        let accent = Theme::accent().into();
+        style.color = Some(accent);
+        style.underline = Some(UnderlineStyle {
+            thickness: px(1.),
+            color: Some(accent),
+            wavy: false,
+        });
+        has_style = true;
+    }
+
+    if has_style {
+        Some(style)
+    } else {
+        None
+    }
 }
 
 fn render_inline_run(r: InlineRun) -> impl IntoElement {
@@ -516,7 +612,7 @@ fn group_blocks(blocks: Vec<Block>) -> Vec<BlockGroup> {
 
     for block in blocks {
         let block_list_type = get_list_type(&block);
-        
+
         if let Some(list_type) = block_list_type {
             // Check if this is the same type as the current list
             if current_list_type == Some(list_type) {
@@ -556,9 +652,12 @@ fn render_block_group(group: BlockGroup, scroll_handle: Option<ScrollHandle>) ->
                 .flex()
                 .flex_col()
                 .gap_0()
-                .children(blocks.into_iter().map(move |b| render_block(b, handle.clone())))
+                .children(
+                    blocks
+                        .into_iter()
+                        .map(move |b| render_block(b, handle.clone())),
+                )
                 .into_any_element()
         }
     }
 }
-
