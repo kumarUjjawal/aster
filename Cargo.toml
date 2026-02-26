@@ -3,6 +3,10 @@ name = "aster"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "Aster"
+path = "src/main.rs"
+
 [dependencies]
 gpui = "0.2.2"
 anyhow = "1.0.100"

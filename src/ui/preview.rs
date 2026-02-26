@@ -82,7 +82,7 @@ impl Render for PreviewView {
             .min_w(px(0.))
             .min_h(px(0.))
             .overflow_hidden() // Prevent content from overflowing container bounds
-            .bg(Theme::panel_alt())
+            .bg(Theme::preview_bg())
             .p(px(18.))
             .text_size(px(settings::get_font_size()))
             .text_color(Theme::text())
@@ -437,6 +437,22 @@ fn render_inline_runs(runs: Vec<InlineRun>) -> gpui::AnyElement {
 fn render_inline_line(line: Vec<InlineRun>) -> gpui::AnyElement {
     // Keep the interactive rendering path for links so click handlers continue to work.
     if line.iter().any(|run| run.link.is_some()) {
+        return div()
+            .w_full()
+            .min_w(px(0.))
+            .flex()
+            .flex_row()
+            .flex_wrap()
+            .items_baseline()
+            .gap_0()
+            .children(line.into_iter().map(render_inline_run))
+            .into_any_element();
+    }
+
+    // Safety guard for GPUI macOS shaping: avoid StyledText highlight runs on
+    // non-ASCII content until upstream run-boundary handling is fixed.
+    let has_non_ascii = line.iter().any(|run| !run.text.is_ascii());
+    if has_non_ascii {
         return div()
             .w_full()
             .min_w(px(0.))

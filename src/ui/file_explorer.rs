@@ -1,6 +1,7 @@
 use crate::model::file_tree::FileTreeState;
 use crate::model::preview::PreviewState;
 use crate::services::markdown::Block;
+use crate::ui::text_utils::ellipsize_chars;
 use crate::ui::theme::Theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -153,10 +154,10 @@ impl Render for FileExplorerView {
                     .child(
                         div()
                             .text_sm()
-                            .truncate()
+                            .overflow_hidden()
                             .flex_1()
                             .text_color(Theme::text())
-                            .child(name),
+                            .child(ellipsize_chars(&name, 48)),
                     )
             })
             .collect();
@@ -195,10 +196,10 @@ impl Render for FileExplorerView {
                     .child(
                         div()
                             .text_sm()
-                            .truncate()
+                            .overflow_hidden()
                             .flex_1()
                             .text_color(Theme::text())
-                            .child(title),
+                            .child(ellipsize_chars(&title, 64)),
                     )
             })
             .collect();

@@ -6,7 +6,8 @@ use crate::model::document::DocumentState;
 use crate::model::file_tree::FileTreeState;
 use crate::model::preview::PreviewState;
 use crate::services::fs::{
-    pick_folder_async, pick_open_path_async, pick_save_path_async, read_to_string, write_atomic,
+    pick_folder_async, pick_open_markdown_path_async, pick_save_path_async, read_to_string,
+    write_atomic,
 };
 use crate::services::markdown::render_blocks;
 use crate::services::settings::{self, Settings};
@@ -36,9 +37,9 @@ enum ViewMode {
 
 fn icon_for_view_mode(mode: ViewMode) -> IconName {
     match mode {
-        ViewMode::Editor => IconName::SquareTerminal,
+        ViewMode::Editor => IconName::PanelLeft,
         ViewMode::Split => IconName::LayoutDashboard,
-        ViewMode::Preview => IconName::BookOpen,
+        ViewMode::Preview => IconName::PanelRight,
     }
 }
 
@@ -284,18 +285,12 @@ impl RootView {
             return;
         }
 
-        // Use async file picker
-        let receiver = pick_open_path_async(cx);
-
+        let picker = pick_open_markdown_path_async();
         cx.spawn(async move |this, cx| {
-            if let Ok(Ok(Some(paths))) = receiver.await {
-                if let Some(path) = paths.into_iter().next() {
-                    if let Ok(utf8_path) = Utf8PathBuf::try_from(path) {
-                        let _ = this.update(&mut *cx, |this, cx| {
-                            this.open_path_internal(&utf8_path, cx);
-                        });
-                    }
-                }
+            if let Some(utf8_path) = picker.await {
+                let _ = this.update(&mut *cx, |this, cx| {
+                    this.open_path_internal(&utf8_path, cx);
+                });
             }
         })
         .detach();
@@ -523,7 +518,7 @@ impl Render for RootView {
                     div()
                         .text_sm()
                         .text_color(Theme::muted())
-                        .truncate()
+                        .overflow_hidden()
                         .max_w(px(520.))
                         .child(status_right),
                 ),
@@ -647,7 +642,7 @@ mod tests {
     fn view_mode_icons_match_expected_semantics() {
         assert_eq!(
             icon_for_view_mode(ViewMode::Editor).path(),
-            IconName::SquareTerminal.path()
+            IconName::PanelLeft.path()
         );
         assert_eq!(
             icon_for_view_mode(ViewMode::Split).path(),
@@ -655,7 +650,7 @@ mod tests {
         );
         assert_eq!(
             icon_for_view_mode(ViewMode::Preview).path(),
-            IconName::BookOpen.path()
+            IconName::PanelRight.path()
         );
     }
 }

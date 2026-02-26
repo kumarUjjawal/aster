@@ -15,6 +15,9 @@ impl Theme {
     pub fn panel_alt() -> Rgba {
         rgb(0xf2f3f7)
     }
+    pub fn preview_bg() -> Rgba {
+        rgb(0xf6f7f8)
+    }
     pub fn border() -> Rgba {
         rgb(0xd8dde3)
     }

@@ -2,6 +2,7 @@ use crate::commands::{Copy, Cut, Find, FindNext, FindPrevious, Paste, Redo, Sele
 use crate::model::document::DocumentState;
 use crate::services::settings;
 use crate::services::syntax::{SyntaxKind, markdown_spans};
+use crate::ui::text_utils::ellipsize_chars;
 use crate::ui::theme::Theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -399,10 +400,14 @@ impl Render for EditorView {
             combine_highlights(syntax_and_search, selection_highlights).collect()
         };
 
+        // Safety guard for GPUI macOS shaping: avoid mixed style runs on non-ASCII
+        // content, which can trigger invalid UTF-8 run boundaries in gpui 0.2.2.
         let mut styled = StyledText::new(text_owned.clone());
-        let safe_highlights = sanitize_highlights(&text_owned, all_highlights);
-        if !safe_highlights.is_empty() {
-            styled = styled.with_highlights(safe_highlights);
+        if text_owned.is_ascii() {
+            let safe_highlights = sanitize_highlights(&text_owned, all_highlights);
+            if !safe_highlights.is_empty() {
+                styled = styled.with_highlights(safe_highlights);
+            }
         }
 
         let text_layout = styled.layout().clone();
@@ -853,12 +858,12 @@ impl Render for EditorView {
                             div()
                                 .text_sm()
                                 .max_w(px(300.))
-                                .truncate()
+                                .overflow_hidden()
                                 .text_color(Theme::text())
                                 .child(if self.search_query.is_empty() {
                                     "Type to search".to_string()
                                 } else {
-                                    self.search_query.clone()
+                                    ellipsize_chars(&self.search_query, 80)
                                 }),
                         )
                         .child(
