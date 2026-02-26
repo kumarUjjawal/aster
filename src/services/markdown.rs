@@ -19,17 +19,36 @@ pub enum Block {
     Paragraph(Vec<InlineRun>),
     Heading(u32, Vec<InlineRun>),
     ListItem(Vec<InlineRun>),
-    OrderedListItem { number: u64, content: Vec<InlineRun> },
-    TaskListItem { checked: bool, content: Vec<InlineRun> },
+    OrderedListItem {
+        number: u64,
+        content: Vec<InlineRun>,
+    },
+    TaskListItem {
+        checked: bool,
+        content: Vec<InlineRun>,
+    },
     CodeBlock(String),
     Quote(Vec<InlineRun>),
-    Image { alt: String, src: String },
+    Image {
+        alt: String,
+        src: String,
+    },
     /// Inline footnote reference marker [^label]
-    FootnoteRef { label: String, index: usize },
+    FootnoteRef {
+        label: String,
+        index: usize,
+    },
     /// Footnote definition [^label]: content
-    FootnoteDefinition { label: String, index: usize, content: Vec<InlineRun> },
+    FootnoteDefinition {
+        label: String,
+        index: usize,
+        content: Vec<InlineRun>,
+    },
     /// GFM Table with column alignments and rows
-    Table { alignments: Vec<Alignment>, rows: Vec<TableRow> },
+    Table {
+        alignments: Vec<Alignment>,
+        rows: Vec<TableRow>,
+    },
 }
 
 /// Result of parsing markdown, containing main content blocks and footnote definitions
@@ -110,7 +129,7 @@ pub fn render_blocks(source: &str) -> ParsedDocument {
     let mut task_list_checked: Option<bool> = None;
     // Ordered list state: Some(counter) if inside an ordered list, increments per item
     let mut ordered_list_counter: Option<u64> = None;
-    
+
     // Footnote tracking
     // Maps footnote labels to their display index (1-based, order of first reference)
     let mut footnote_indices: HashMap<String, usize> = HashMap::new();
@@ -249,7 +268,8 @@ pub fn render_blocks(source: &str) -> ParsedDocument {
             // Footnote definition end
             Event::End(TagEnd::FootnoteDefinition) => {
                 if let Some(label) = current_footnote_def.take() {
-                    footnote_definitions.insert(label, merge_runs(std::mem::take(&mut footnote_runs)));
+                    footnote_definitions
+                        .insert(label, merge_runs(std::mem::take(&mut footnote_runs)));
                 }
             }
             // Footnote reference [^label]
@@ -263,7 +283,7 @@ pub fn render_blocks(source: &str) -> ParsedDocument {
                         next_footnote_index += 1;
                         idx
                     });
-                
+
                 // Push current runs as a paragraph if there are any, then add the footnote ref
                 if !runs.is_empty() {
                     let kind = if in_quote {
@@ -476,7 +496,7 @@ pub fn render_blocks(source: &str) -> ParsedDocument {
         })
         .collect();
     footnotes.sort_by_key(|(index, _, _)| *index);
-    
+
     let footnote_blocks: Vec<Block> = footnotes
         .into_iter()
         .map(|(index, label, content)| Block::FootnoteDefinition {
@@ -498,4 +518,3 @@ enum BlockKind {
     ListItem,
     Quote,
 }
-

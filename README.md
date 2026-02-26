@@ -44,9 +44,48 @@ Pre-built macOS applications are available for direct download:
 - Rope-backed text model (`ropey`) for fast inserts/deletes
 - Live Markdown parse and render (CommonMark + GFM extensions)
 - Support for tables, footnotes, strikethrough, and task lists
+- Document outline in the sidebar (click any heading to jump in preview)
+- Centered view switcher for Editor / Split / Preview modes
+- Lightweight Markdown syntax highlighting in the editor
+- In-editor Find with match navigation (`Cmd+F`, `Cmd+G`, `Shift+Cmd+G`)
 - Image loading (local)
 - File explorer sidebar with folder navigation
 - Atomic file saves with dirty-state tracking; open/save dialogs via `rfd`
+
+---
+
+## Keyboard Shortcuts
+
+### File
+
+- `Cmd+N`: New file
+- `Cmd+O`: Open file
+- `Shift+Cmd+O`: Open folder
+- `Cmd+S`: Save
+- `Shift+Cmd+S`: Save As
+- `Cmd+W`: Close window
+- `Cmd+Q`: Quit
+
+### Edit
+
+- `Cmd+Z`: Undo
+- `Shift+Cmd+Z` / `Cmd+Y`: Redo
+- `Cmd+X`: Cut
+- `Cmd+C`: Copy
+- `Cmd+V`: Paste
+- `Cmd+A`: Select all
+
+### Search
+
+- `Cmd+F`: Open Find
+- `Cmd+G`: Find next match
+- `Shift+Cmd+G`: Find previous match
+
+### View
+
+- `Cmd+=`: Increase font size
+- `Cmd+-`: Decrease font size
+- `Cmd+0`: Reset font size
 
 ---
 
@@ -66,10 +105,13 @@ Pre-built macOS applications are available for direct download:
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
+### Step 2: Run Aster
 
 ```bash
 cargo run
 ```
+
+### Step 3: Open a file on launch (optional)
 
 Open a file on launch:
 
@@ -149,8 +191,10 @@ cargo bundle --release --target x86_64-apple-darwin
 
 - Split edit/preview layout renders headings, italics, bold, code blocks, list items, quotes, and tables
 - Light theme applied across panels and preview components
-- Keyboard shortcuts for text input and file operations (Cmd+O / Cmd+S)
-- File explorer sidebar for navigating markdown files
+- Keyboard shortcuts for file, edit, view, and search workflows
+- File explorer sidebar for navigating markdown files, plus clickable heading outline
+- Lightweight syntax highlighting in the editor for Markdown structure
+- In-editor find flow with next/previous navigation
 - Image rendering (local)
 - Footnotes support with navigation
 

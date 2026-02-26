@@ -184,7 +184,11 @@ impl DocumentState {
             count
         } else {
             // Count words by iterating through rope chunks to avoid full string allocation
-            let count = self.rope.chunks().flat_map(|chunk| chunk.split_whitespace()).count();
+            let count = self
+                .rope
+                .chunks()
+                .flat_map(|chunk| chunk.split_whitespace())
+                .count();
             self.word_count_cache = Some(count);
             count
         }

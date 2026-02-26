@@ -3,11 +3,11 @@ use crate::services::markdown::{Block, InlineRun, TableCell, TableRow};
 use crate::services::settings;
 use crate::ui::theme::Theme;
 use gpui::{
-    div, img, list, prelude::FluentBuilder, px, App, ClickEvent, Context, CursorStyle, Entity,
-    FocusHandle, FontStyle, FontWeight, HighlightStyle, InteractiveElement, IntoElement,
-    ListAlignment, ListState, MouseButton, MouseDownEvent, ObjectFit, ParentElement, Render,
-    ScrollHandle, SharedString, SharedUri, StatefulInteractiveElement, Styled, StyledImage,
-    StyledText, UnderlineStyle, Window,
+    App, ClickEvent, Context, CursorStyle, Entity, FocusHandle, FontStyle, FontWeight,
+    HighlightStyle, InteractiveElement, IntoElement, ListAlignment, ListState, MouseButton,
+    MouseDownEvent, ObjectFit, ParentElement, Render, ScrollHandle, SharedString, SharedUri,
+    StatefulInteractiveElement, Styled, StyledImage, StyledText, UnderlineStyle, Window, div, img,
+    list, prelude::FluentBuilder, px,
 };
 use std::sync::Arc;
 
@@ -39,8 +39,13 @@ impl PreviewView {
 
 impl Render for PreviewView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let blocks = self.preview.read(cx).blocks.clone(); // Arc clone - cheap!
-        let footnotes = self.preview.read(cx).footnotes.clone(); // Arc clone - cheap!
+        let (blocks, footnotes) = {
+            let preview = self.preview.read(cx);
+            (preview.blocks.clone(), preview.footnotes.clone())
+        }; // Arc clone - cheap!
+        let pending_outline_jump = self
+            .preview
+            .update(cx, |preview, _| preview.pending_outline_jump.take());
         let focus_handle = self
             .focus_handle
             .get_or_insert_with(|| cx.focus_handle())
@@ -64,6 +69,12 @@ impl Render for PreviewView {
             self.list_state.reset(groups.len());
             groups
         };
+
+        if let Some(heading_ordinal) = pending_outline_jump
+            && let Some(group_idx) = find_heading_group_index(grouped.as_ref(), heading_ordinal)
+        {
+            self.list_state.scroll_to_reveal_item(group_idx);
+        }
 
         div()
             .id("preview_container")
@@ -125,6 +136,22 @@ impl Render for PreviewView {
                 )
             })
     }
+}
+
+fn find_heading_group_index(groups: &[BlockGroup], target_heading_ordinal: usize) -> Option<usize> {
+    let mut heading_ordinal = 0usize;
+    for (group_idx, group) in groups.iter().enumerate() {
+        match group {
+            BlockGroup::Single(Block::Heading(_, _)) => {
+                if heading_ordinal == target_heading_ordinal {
+                    return Some(group_idx);
+                }
+                heading_ordinal += 1;
+            }
+            BlockGroup::ListGroup(_) | BlockGroup::Single(_) => {}
+        }
+    }
+    None
 }
 
 fn render_block(block: Block, scroll_handle: Option<ScrollHandle>) -> gpui::AnyElement {
@@ -448,7 +475,12 @@ fn render_inline_line(line: Vec<InlineRun>) -> gpui::AnyElement {
     let styled_text = if highlights.is_empty() {
         StyledText::new(text)
     } else {
-        StyledText::new(text).with_highlights(highlights)
+        let safe = sanitize_highlights(&text, highlights);
+        if safe.is_empty() {
+            StyledText::new(text)
+        } else {
+            StyledText::new(text).with_highlights(safe)
+        }
     };
 
     div()
@@ -488,11 +520,38 @@ fn highlight_for_run(run: &InlineRun) -> Option<HighlightStyle> {
         has_style = true;
     }
 
-    if has_style {
-        Some(style)
-    } else {
-        None
-    }
+    if has_style { Some(style) } else { None }
+}
+
+fn sanitize_highlights(
+    text: &str,
+    highlights: Vec<(std::ops::Range<usize>, HighlightStyle)>,
+) -> Vec<(std::ops::Range<usize>, HighlightStyle)> {
+    let len = text.len();
+    highlights
+        .into_iter()
+        .filter_map(|(range, style)| {
+            if range.start >= range.end || range.start >= len {
+                return None;
+            }
+
+            let mut start = range.start.min(len);
+            let mut end = range.end.min(len);
+
+            while start > 0 && !text.is_char_boundary(start) {
+                start -= 1;
+            }
+            while end < len && !text.is_char_boundary(end) {
+                end += 1;
+            }
+
+            if start < end && text.is_char_boundary(start) && text.is_char_boundary(end) {
+                Some((start..end, style))
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 fn render_inline_run(r: InlineRun) -> impl IntoElement {
@@ -659,5 +718,46 @@ fn render_block_group(group: BlockGroup, scroll_handle: Option<ScrollHandle>) ->
                 )
                 .into_any_element()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn run(text: &str) -> InlineRun {
+        InlineRun {
+            text: text.to_string(),
+            bold: false,
+            italic: false,
+            code: false,
+            link: None,
+        }
+    }
+
+    #[test]
+    fn outline_jump_maps_to_heading_group() {
+        let blocks = vec![
+            Block::Heading(1, vec![run("First")]),
+            Block::Paragraph(vec![run("Body")]),
+            Block::ListItem(vec![run("Item A")]),
+            Block::ListItem(vec![run("Item B")]),
+            Block::Heading(2, vec![run("Second")]),
+        ];
+        let groups = group_blocks(blocks);
+
+        assert_eq!(find_heading_group_index(&groups, 0), Some(0));
+        assert_eq!(find_heading_group_index(&groups, 1), Some(3));
+        assert_eq!(find_heading_group_index(&groups, 2), None);
+    }
+
+    #[test]
+    fn highlight_sanitizer_repairs_utf8_boundaries() {
+        let text = "dn’t require";
+        let fixed = sanitize_highlights(text, vec![(0..3, HighlightStyle::default())]);
+        assert_eq!(fixed.len(), 1);
+        assert_eq!(fixed[0].0, 0..5);
+        assert!(text.is_char_boundary(fixed[0].0.start));
+        assert!(text.is_char_boundary(fixed[0].0.end));
     }
 }

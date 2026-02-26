@@ -1,8 +1,13 @@
-use crate::commands::{CloseWindow, FontSizeDecrease, FontSizeIncrease, FontSizeReset, NewFile, OpenFile, OpenFolder, SaveFile, SaveFileAs};
+use crate::commands::{
+    CloseWindow, FontSizeDecrease, FontSizeIncrease, FontSizeReset, NewFile, OpenFile, OpenFolder,
+    SaveFile, SaveFileAs,
+};
 use crate::model::document::DocumentState;
 use crate::model::file_tree::FileTreeState;
 use crate::model::preview::PreviewState;
-use crate::services::fs::{pick_folder_async, pick_open_path_async, pick_save_path_async, read_to_string, write_atomic};
+use crate::services::fs::{
+    pick_folder_async, pick_open_path_async, pick_save_path_async, read_to_string, write_atomic,
+};
 use crate::services::markdown::render_blocks;
 use crate::services::settings::{self, Settings};
 use crate::services::tasks::Debouncer;
@@ -17,8 +22,8 @@ use gpui::{
     Context, Entity, InteractiveElement, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent,
     ParentElement, Render, Styled, Window, div, px, svg,
 };
-use gpui_component::{IconName, IconNamed};
 use gpui_component::notification::NotificationList;
+use gpui_component::{IconName, IconNamed};
 use rfd::{MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
 use std::time::Duration;
 
@@ -27,6 +32,14 @@ enum ViewMode {
     Split,
     Editor,
     Preview,
+}
+
+fn icon_for_view_mode(mode: ViewMode) -> IconName {
+    match mode {
+        ViewMode::Editor => IconName::SquareTerminal,
+        ViewMode::Split => IconName::LayoutDashboard,
+        ViewMode::Preview => IconName::BookOpen,
+    }
 }
 
 pub struct RootView {
@@ -96,17 +109,16 @@ impl RootView {
         FileTreeState::new()
     }
 
-    pub fn build_file_explorer(file_tree: Entity<FileTreeState>) -> crate::ui::file_explorer::FileExplorerView {
-        FileExplorerView::new(file_tree)
+    pub fn build_file_explorer(
+        file_tree: Entity<FileTreeState>,
+        preview: Entity<PreviewState>,
+    ) -> crate::ui::file_explorer::FileExplorerView {
+        FileExplorerView::new(file_tree, preview)
     }
 
-    fn save_document(
-        &mut self,
-        cx: &mut Context<Self>,
-        force_save_as: bool,
-    ) {
+    fn save_document(&mut self, cx: &mut Context<Self>, force_save_as: bool) {
         let current_path = self.document.read(cx).path.clone();
-        
+
         // If we have a path and not forcing save-as, save directly
         if !force_save_as {
             if let Some(path) = current_path {
@@ -114,22 +126,21 @@ impl RootView {
                 return;
             }
         }
-        
+
         // Need to show file picker - use async dialog
         let receiver = pick_save_path_async(cx, current_path.as_ref());
-        
+
         cx.spawn(async move |this, cx| {
             if let Ok(Ok(Some(path))) = receiver.await {
                 if let Ok(mut utf8_path) = Utf8PathBuf::try_from(path) {
                     if utf8_path.extension().is_none() {
                         utf8_path.set_extension("md");
                     }
-                    
+
                     // Read document contents and write synchronously
-                    let contents_result = this.update(&mut *cx, |this, cx| {
-                        this.document.read(cx).text()
-                    });
-                    
+                    let contents_result =
+                        this.update(&mut *cx, |this, cx| this.document.read(cx).text());
+
                     if let Ok(contents) = contents_result {
                         if write_atomic(&utf8_path, &contents).is_ok() {
                             let _ = this.update(&mut *cx, |this, cx| {
@@ -145,15 +156,12 @@ impl RootView {
                     }
                 }
             }
-        }).detach();
+        })
+        .detach();
     }
-    
+
     /// Synchronous save for when we have a path and window context
-    fn do_save_to_path_sync(
-        &mut self,
-        mut path: Utf8PathBuf,
-        cx: &mut Context<Self>,
-    ) {
+    fn do_save_to_path_sync(&mut self, mut path: Utf8PathBuf, cx: &mut Context<Self>) {
         if path.extension().is_none() {
             path.set_extension("md");
         }
@@ -170,7 +178,7 @@ impl RootView {
                 // Skip notification here too - simplifies and avoids window context issues
             }
             Err(_err) => {
-                // Silently fail for now - window context not available for notification 
+                // Silently fail for now - window context not available for notification
             }
         }
     }
@@ -231,13 +239,9 @@ impl RootView {
     ) {
         self.open_path_internal(path, cx);
     }
-    
+
     /// Internal open path that doesn't require window - for async context
-    fn open_path_internal(
-        &mut self,
-        path: &camino::Utf8PathBuf,
-        cx: &mut Context<Self>,
-    ) {
+    fn open_path_internal(&mut self, path: &camino::Utf8PathBuf, cx: &mut Context<Self>) {
         match read_to_string(path) {
             Ok(text) => {
                 let _ = self.document.update(cx, |d, cx| {
@@ -282,7 +286,7 @@ impl RootView {
 
         // Use async file picker
         let receiver = pick_open_path_async(cx);
-        
+
         cx.spawn(async move |this, cx| {
             if let Ok(Ok(Some(paths))) = receiver.await {
                 if let Some(path) = paths.into_iter().next() {
@@ -293,7 +297,8 @@ impl RootView {
                     }
                 }
             }
-        }).detach();
+        })
+        .detach();
     }
 
     pub fn action_open_path(
@@ -327,7 +332,7 @@ impl RootView {
     fn action_open_folder(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         let receiver = pick_folder_async(cx);
         let file_tree = self.file_tree.clone();
-        
+
         cx.spawn(async move |_, cx| {
             if let Ok(Ok(Some(paths))) = receiver.await {
                 if let Some(path) = paths.into_iter().next() {
@@ -338,7 +343,8 @@ impl RootView {
                     }
                 }
             }
-        }).detach();
+        })
+        .detach();
     }
 
     fn action_close_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -352,7 +358,10 @@ impl RootView {
 impl Render for RootView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // Check if file explorer has a pending file to open
-        if let Some(path) = self.file_tree.update(cx, |tree, _| tree.take_pending_open()) {
+        if let Some(path) = self
+            .file_tree
+            .update(cx, |tree, _| tree.take_pending_open())
+        {
             self.open_path(&path, window, cx);
         }
 
@@ -394,10 +403,11 @@ impl Render for RootView {
                 // Spawn async task to parse markdown in background
                 cx.spawn(async move |_, cx| {
                     // Run render_blocks on background thread to avoid blocking UI
-                    let parsed = cx.background_executor().spawn(async move {
-                        render_blocks(&text)
-                    }).await;
-                    
+                    let parsed = cx
+                        .background_executor()
+                        .spawn(async move { render_blocks(&text) })
+                        .await;
+
                     // Update preview state on main thread
                     let _ = preview.update(cx, |p, cx| {
                         if target_rev >= p.source_revision {
@@ -407,7 +417,8 @@ impl Render for RootView {
                             cx.notify();
                         }
                     });
-                }).detach();
+                })
+                .detach();
             });
         }
 
@@ -451,12 +462,11 @@ impl Render for RootView {
                         cx.notify();
                     }),
                 )
-                .child(
-                    svg()
-                        .path(icon.path())
-                        .size_4()
-                        .text_color(if selected { Theme::text() } else { Theme::muted() })
-                )
+                .child(svg().path(icon.path()).size_4().text_color(if selected {
+                    Theme::text()
+                } else {
+                    Theme::muted()
+                }))
         };
 
         let view_controls = div()
@@ -466,21 +476,19 @@ impl Render for RootView {
             .flex_shrink_0()
             .child(make_view_button(
                 "view-editor",
-                IconName::PanelLeft,
+                icon_for_view_mode(ViewMode::Editor),
                 ViewMode::Editor,
             ))
             .child(make_view_button(
                 "view-split",
-                IconName::LayoutDashboard,
+                icon_for_view_mode(ViewMode::Split),
                 ViewMode::Split,
             ))
             .child(make_view_button(
                 "view-preview",
-                IconName::PanelRight,
+                icon_for_view_mode(ViewMode::Preview),
                 ViewMode::Preview,
             ));
-
-
 
         let split_view = div()
             .flex()
@@ -508,15 +516,17 @@ impl Render for RootView {
             .border_t_1()
             .border_color(Theme::border())
             .flex_shrink_0()
-            .child(view_controls)
             .child(div().flex_1())
+            .child(view_controls)
             .child(
-                div()
-                    .text_sm()
-                    .text_color(Theme::muted())
-                    .truncate()
-                    .max_w(px(520.))
-                    .child(status_right),
+                div().flex_1().flex().justify_end().child(
+                    div()
+                        .text_sm()
+                        .text_color(Theme::muted())
+                        .truncate()
+                        .max_w(px(520.))
+                        .child(status_right),
+                ),
             );
 
         div()
@@ -545,12 +555,14 @@ impl Render for RootView {
                 this.action_close_window(window, cx);
             }))
             .on_action(cx.listener(|this, _: &FontSizeIncrease, _window, cx| {
-                this.font_size = Settings::clamp_font_size(this.font_size + Settings::FONT_SIZE_STEP);
+                this.font_size =
+                    Settings::clamp_font_size(this.font_size + Settings::FONT_SIZE_STEP);
                 settings::set_font_size(this.font_size);
                 cx.notify();
             }))
             .on_action(cx.listener(|this, _: &FontSizeDecrease, _window, cx| {
-                this.font_size = Settings::clamp_font_size(this.font_size - Settings::FONT_SIZE_STEP);
+                this.font_size =
+                    Settings::clamp_font_size(this.font_size - Settings::FONT_SIZE_STEP);
                 settings::set_font_size(this.font_size);
                 cx.notify();
             }))
@@ -623,5 +635,27 @@ impl Render for RootView {
             )
             .child(bottom_bar)
             .child(self.notifications.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gpui_component::IconNamed;
+
+    #[test]
+    fn view_mode_icons_match_expected_semantics() {
+        assert_eq!(
+            icon_for_view_mode(ViewMode::Editor).path(),
+            IconName::SquareTerminal.path()
+        );
+        assert_eq!(
+            icon_for_view_mode(ViewMode::Split).path(),
+            IconName::LayoutDashboard.path()
+        );
+        assert_eq!(
+            icon_for_view_mode(ViewMode::Preview).path(),
+            IconName::BookOpen.path()
+        );
     }
 }

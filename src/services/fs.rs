@@ -38,7 +38,7 @@ pub fn pick_save_path_async(
     let home_dir = directories::UserDirs::new()
         .map(|d| d.home_dir().to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."));
-    
+
     let (directory, suggested_name) = if let Some(path) = default {
         let dir = path
             .parent()

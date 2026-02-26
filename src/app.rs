@@ -1,14 +1,15 @@
 use crate::commands::{
-    About, CloseWindow, Copy, Cut, FontSizeDecrease, FontSizeIncrease, FontSizeReset,
-    NewFile, OpenFile, OpenFolder, Paste, Quit, Redo, SaveFile, SaveFileAs, SelectAll, Undo,
+    About, CloseWindow, Copy, Cut, Find, FindNext, FindPrevious, FontSizeDecrease,
+    FontSizeIncrease, FontSizeReset, NewFile, OpenFile, OpenFolder, Paste, Quit, Redo, SaveFile,
+    SaveFileAs, SelectAll, Undo,
 };
 use crate::services::assets::AsterAssetSource;
 use crate::services::fs::{read_to_string, write_atomic};
 use crate::ui::root::RootView;
 use camino::Utf8PathBuf;
 use gpui::{
-    App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem, OsAction, Pixels, SystemMenuType,
-    Window, WindowBounds, WindowOptions,
+    App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem, OsAction, Pixels,
+    SystemMenuType, Window, WindowBounds, WindowOptions,
 };
 use gpui_component::notification::NotificationList;
 use rfd::{MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
@@ -49,6 +50,9 @@ pub fn run() {
             KeyBinding::new("cmd-c", Copy, None),
             KeyBinding::new("cmd-v", Paste, None),
             KeyBinding::new("cmd-a", SelectAll, None),
+            KeyBinding::new("cmd-f", Find, None),
+            KeyBinding::new("cmd-g", FindNext, None),
+            KeyBinding::new("shift-cmd-g", FindPrevious, None),
             KeyBinding::new("cmd-=", FontSizeIncrease, None),
             KeyBinding::new("cmd--", FontSizeDecrease, None),
             KeyBinding::new("cmd-0", FontSizeReset, None),
@@ -87,6 +91,10 @@ pub fn run() {
                     MenuItem::os_action("Cut", Cut, OsAction::Cut),
                     MenuItem::os_action("Copy", Copy, OsAction::Copy),
                     MenuItem::os_action("Paste", Paste, OsAction::Paste),
+                    MenuItem::separator(),
+                    MenuItem::action("Find…", Find),
+                    MenuItem::action("Find Next", FindNext),
+                    MenuItem::action("Find Previous", FindPrevious),
                     MenuItem::separator(),
                     MenuItem::os_action("Select All", SelectAll, OsAction::SelectAll),
                 ],
@@ -200,7 +208,8 @@ fn build_root_view(
     let notifications = cx.new(|cx| NotificationList::new(window, cx));
     let editor_view = cx.new(|_| RootView::build_editor(document.clone()));
     let preview_view = cx.new(|_| RootView::build_preview(preview.clone()));
-    let file_explorer_view = cx.new(|_| RootView::build_file_explorer(file_tree.clone()));
+    let file_explorer_view =
+        cx.new(|_| RootView::build_file_explorer(file_tree.clone(), preview.clone()));
 
     // File tree starts empty - user can open a folder explicitly
     // (auto-initializing with home dir triggers macOS permission dialogs)
@@ -217,7 +226,17 @@ fn build_root_view(
     }
 
     install_should_close_prompt(window, cx, document.clone());
-    cx.new(|_| RootView::new(document, preview, file_tree, editor_view, preview_view, file_explorer_view, notifications))
+    cx.new(|_| {
+        RootView::new(
+            document,
+            preview,
+            file_tree,
+            editor_view,
+            preview_view,
+            file_explorer_view,
+            notifications,
+        )
+    })
 }
 
 fn install_should_close_prompt(
@@ -252,7 +271,9 @@ fn install_should_close_prompt(
                     MessageDialog::new()
                         .set_level(MessageLevel::Info)
                         .set_title("Save required")
-                        .set_description("Please use Save As (Cmd+Shift+S) to save this file first.")
+                        .set_description(
+                            "Please use Save As (Cmd+Shift+S) to save this file first.",
+                        )
                         .set_buttons(MessageButtons::Ok)
                         .show();
                     return false;

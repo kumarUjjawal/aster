@@ -6,6 +6,8 @@ pub struct PreviewState {
     pub blocks: Arc<Vec<Block>>,
     pub footnotes: Arc<Vec<Block>>,
     pub source_revision: u64,
+    /// Pending jump request from outline sidebar (0-based heading ordinal)
+    pub pending_outline_jump: Option<usize>,
 }
 
 impl PreviewState {
@@ -14,7 +16,7 @@ impl PreviewState {
             blocks: Arc::new(Vec::new()),
             footnotes: Arc::new(Vec::new()),
             source_revision: 0,
+            pending_outline_jump: None,
         }
     }
 }
-
