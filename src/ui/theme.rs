@@ -18,9 +18,6 @@ impl Theme {
     pub fn code_block_bg() -> Rgba {
         rgb(0xf7f6f2)
     }
-    pub fn preview_bg() -> Rgba {
-        rgb(0xf6f7f8)
-    }
     pub fn border() -> Rgba {
         rgb(0xd8dde3)
     }
@@ -35,9 +32,5 @@ impl Theme {
     }
     pub fn selection_bg() -> Rgba {
         rgba(0x2d7fd233) // accent with low alpha for text selection
-    }
-
-    pub fn strong() -> Rgba {
-        rgb(0xc02f4d)
     }
 }

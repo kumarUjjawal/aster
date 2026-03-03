@@ -9,10 +9,15 @@ pub enum SyntaxKind {
     ListMarker,
     TaskMarker,
     CodeFence,
+    InlineCodeMarker,
     InlineCode,
+    LinkTextDelimiter,
     LinkText,
+    LinkUrlDelimiter,
     LinkUrl,
     EmphasisMarker,
+    EmphasisText,
+    StrongText,
 }
 
 #[derive(Clone, Debug)]
@@ -57,9 +62,9 @@ pub fn markdown_spans(source: &str) -> Vec<SyntaxSpan> {
         }
 
         if !skip_inline {
-            if let Some((marker_len, hashes)) = heading_prefix(content) {
+            if let Some((marker_len, _hashes)) = heading_prefix(content) {
                 spans.push(SyntaxSpan {
-                    range: content_start..(content_start + marker_len.min(hashes)),
+                    range: content_start..(content_start + marker_len),
                     kind: SyntaxKind::HeadingMarker,
                 });
                 let text_start = content_start + marker_len;
@@ -179,8 +184,18 @@ fn scan_inline(line: &str, line_start: usize, spans: &mut Vec<SyntaxSpan>) {
             b'`' => {
                 if let Some(close) = find_next_byte(bytes, i + 1, b'`') {
                     spans.push(SyntaxSpan {
-                        range: (line_start + i)..(line_start + close + 1),
-                        kind: SyntaxKind::InlineCode,
+                        range: (line_start + i)..(line_start + i + 1),
+                        kind: SyntaxKind::InlineCodeMarker,
+                    });
+                    if close > i + 1 {
+                        spans.push(SyntaxSpan {
+                            range: (line_start + i + 1)..(line_start + close),
+                            kind: SyntaxKind::InlineCode,
+                        });
+                    }
+                    spans.push(SyntaxSpan {
+                        range: (line_start + close)..(line_start + close + 1),
+                        kind: SyntaxKind::InlineCodeMarker,
                     });
                     i = close + 1;
                     continue;
@@ -193,18 +208,34 @@ fn scan_inline(line: &str, line_start: usize, spans: &mut Vec<SyntaxSpan>) {
                         && bytes[open_paren] == b'('
                         && let Some(close_paren) = find_next_byte(bytes, open_paren + 1, b')')
                     {
+                        spans.push(SyntaxSpan {
+                            range: (line_start + i)..(line_start + i + 1),
+                            kind: SyntaxKind::LinkTextDelimiter,
+                        });
                         if close_bracket > i + 1 {
                             spans.push(SyntaxSpan {
                                 range: (line_start + i + 1)..(line_start + close_bracket),
                                 kind: SyntaxKind::LinkText,
                             });
                         }
+                        spans.push(SyntaxSpan {
+                            range: (line_start + close_bracket)..(line_start + close_bracket + 1),
+                            kind: SyntaxKind::LinkTextDelimiter,
+                        });
+                        spans.push(SyntaxSpan {
+                            range: (line_start + open_paren)..(line_start + open_paren + 1),
+                            kind: SyntaxKind::LinkUrlDelimiter,
+                        });
                         if close_paren > open_paren + 1 {
                             spans.push(SyntaxSpan {
                                 range: (line_start + open_paren + 1)..(line_start + close_paren),
                                 kind: SyntaxKind::LinkUrl,
                             });
                         }
+                        spans.push(SyntaxSpan {
+                            range: (line_start + close_paren)..(line_start + close_paren + 1),
+                            kind: SyntaxKind::LinkUrlDelimiter,
+                        });
                         i = close_paren + 1;
                         continue;
                     }
@@ -223,6 +254,16 @@ fn scan_inline(line: &str, line_start: usize, spans: &mut Vec<SyntaxSpan>) {
                         range: (line_start + i)..(line_start + i + marker_len),
                         kind: SyntaxKind::EmphasisMarker,
                     });
+                    if close > i + marker_len {
+                        spans.push(SyntaxSpan {
+                            range: (line_start + i + marker_len)..(line_start + close),
+                            kind: if marker_len == 2 {
+                                SyntaxKind::StrongText
+                            } else {
+                                SyntaxKind::EmphasisText
+                            },
+                        });
+                    }
                     spans.push(SyntaxSpan {
                         range: (line_start + close)..(line_start + close + marker_len),
                         kind: SyntaxKind::EmphasisMarker,
@@ -289,13 +330,23 @@ dn’t require a patchwork of vendors.
 
     #[test]
     fn scanner_detects_core_markdown_tokens() {
-        let source = "# Heading\n- [x] Done\n[Link](https://example.com)\n`code`\n";
+        let source =
+            "# Heading\n- [x] Done\n[Link](https://example.com)\n`code`\n*italic* **bold**\n";
         let spans = markdown_spans(source);
 
         assert!(spans.iter().any(|s| s.kind == SyntaxKind::HeadingMarker));
         assert!(spans.iter().any(|s| s.kind == SyntaxKind::TaskMarker));
+        assert!(
+            spans
+                .iter()
+                .any(|s| s.kind == SyntaxKind::LinkTextDelimiter)
+        );
         assert!(spans.iter().any(|s| s.kind == SyntaxKind::LinkText));
+        assert!(spans.iter().any(|s| s.kind == SyntaxKind::LinkUrlDelimiter));
         assert!(spans.iter().any(|s| s.kind == SyntaxKind::LinkUrl));
+        assert!(spans.iter().any(|s| s.kind == SyntaxKind::InlineCodeMarker));
         assert!(spans.iter().any(|s| s.kind == SyntaxKind::InlineCode));
+        assert!(spans.iter().any(|s| s.kind == SyntaxKind::EmphasisText));
+        assert!(spans.iter().any(|s| s.kind == SyntaxKind::StrongText));
     }
 }

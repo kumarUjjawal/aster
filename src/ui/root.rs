@@ -3,53 +3,37 @@ use crate::commands::{
     SaveFileAs,
 };
 use crate::model::document::DocumentState;
-use crate::model::preview::PreviewState;
+use crate::model::inline_markdown::InlineMarkdownState;
 use crate::services::fs::{
     pick_open_markdown_path_async, pick_save_path_async, read_to_string, write_atomic,
 };
-use crate::services::markdown::render_blocks;
+use crate::services::inline_markdown::compute_inline_spans;
 use crate::services::settings::{self, Settings};
 use crate::services::tasks::Debouncer;
 use crate::ui::editor::EditorView;
 use crate::ui::file_explorer::FileExplorerView;
-use crate::ui::preview::PreviewView;
 use crate::ui::theme::Theme;
 
 use camino::Utf8PathBuf;
-use gpui::prelude::FluentBuilder as _;
 use gpui::{
     Context, Entity, InteractiveElement, IntoElement, MouseButton, MouseDownEvent, MouseMoveEvent,
-    ParentElement, Render, Styled, Window, div, px, svg,
+    ParentElement, Render, Styled, Window, div, px,
 };
 use gpui_component::notification::NotificationList;
-use gpui_component::{IconName, IconNamed};
 use rfd::{MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
 use std::time::Duration;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-enum ViewMode {
-    Split,
-    Editor,
-    Preview,
-}
-
-fn icon_for_view_mode(mode: ViewMode) -> IconName {
-    match mode {
-        ViewMode::Editor => IconName::PanelLeft,
-        ViewMode::Split => IconName::LayoutDashboard,
-        ViewMode::Preview => IconName::PanelRight,
-    }
-}
+const INLINE_SYNC_PARSE_MAX_BYTES: usize = 64 * 1024;
 
 pub struct RootView {
     document: Entity<DocumentState>,
-    preview: Entity<PreviewState>,
+    inline_markdown: Entity<InlineMarkdownState>,
     editor_view: Entity<crate::ui::editor::EditorView>,
-    preview_view: Entity<crate::ui::preview::PreviewView>,
     file_explorer_view: Entity<crate::ui::file_explorer::FileExplorerView>,
     notifications: Entity<NotificationList>,
-    preview_debounce: Debouncer<RootView>,
-    view_mode: ViewMode,
+    inline_debounce: Debouncer<RootView>,
+    /// Highest document revision for which an inline parse has been scheduled.
+    scheduled_inline_revision: u64,
     /// Cached document text to avoid O(n) rope-to-string conversion every frame
     cached_doc_text: Option<(u64, String)>,
     /// Current font size in points (8-32)
@@ -63,21 +47,19 @@ pub struct RootView {
 impl RootView {
     pub fn new(
         document: Entity<DocumentState>,
-        preview: Entity<PreviewState>,
+        inline_markdown: Entity<InlineMarkdownState>,
         editor_view: Entity<crate::ui::editor::EditorView>,
-        preview_view: Entity<crate::ui::preview::PreviewView>,
         file_explorer_view: Entity<crate::ui::file_explorer::FileExplorerView>,
         notifications: Entity<NotificationList>,
     ) -> Self {
         Self {
             document,
-            preview,
+            inline_markdown,
             editor_view,
-            preview_view,
             file_explorer_view,
             notifications,
-            preview_debounce: Debouncer::new(Duration::from_millis(200)),
-            view_mode: ViewMode::Split,
+            inline_debounce: Debouncer::new(Duration::from_millis(35)),
+            scheduled_inline_revision: 0,
             cached_doc_text: None,
             font_size: settings::get_font_size(),
             sidebar_width: 200.0,
@@ -89,22 +71,21 @@ impl RootView {
         DocumentState::new_empty()
     }
 
-    pub fn new_preview() -> PreviewState {
-        PreviewState::new()
+    pub fn new_inline_markdown() -> InlineMarkdownState {
+        InlineMarkdownState::new()
     }
 
-    pub fn build_editor(document: Entity<DocumentState>) -> crate::ui::editor::EditorView {
-        EditorView::new(document)
-    }
-
-    pub fn build_preview(preview: Entity<PreviewState>) -> crate::ui::preview::PreviewView {
-        PreviewView::new(preview)
+    pub fn build_editor(
+        document: Entity<DocumentState>,
+        inline_markdown: Entity<InlineMarkdownState>,
+    ) -> crate::ui::editor::EditorView {
+        EditorView::new(document, inline_markdown)
     }
 
     pub fn build_file_explorer(
-        preview: Entity<PreviewState>,
+        document: Entity<DocumentState>,
     ) -> crate::ui::file_explorer::FileExplorerView {
-        FileExplorerView::new(preview)
+        FileExplorerView::new(document)
     }
 
     fn save_document(&mut self, cx: &mut Context<Self>, force_save_as: bool) {
@@ -349,40 +330,70 @@ impl Render for RootView {
             self.cached_doc_text = Some((doc_revision, text.clone()));
             text
         };
-        let preview_rev = self.preview.read(cx).source_revision;
+        let inline_rev = self.inline_markdown.read(cx).source_revision;
 
-        if doc_revision != preview_rev {
-            let text = doc_text.clone();
-            let preview = self.preview.clone();
+        if doc_revision != inline_rev && self.scheduled_inline_revision < doc_revision {
+            self.scheduled_inline_revision = doc_revision;
+            let last_edit = self.document.read(cx).last_edit.clone();
             let target_rev = doc_revision;
-            self.preview_debounce.schedule(cx, move |_, cx| {
-                // Clone values inside FnMut so they can be moved into async
-                let text = text.clone();
-                let preview = preview.clone();
-                // Spawn async task to parse markdown in background
-                cx.spawn(async move |_, cx| {
-                    // Run render_blocks on background thread to avoid blocking UI
-                    let parsed = cx
-                        .background_executor()
-                        .spawn(async move { render_blocks(&text) })
-                        .await;
-
-                    // Update preview state on main thread
-                    let _ = preview.update(cx, |p, cx| {
-                        if target_rev >= p.source_revision {
-                            p.blocks = std::sync::Arc::new(parsed.blocks);
-                            p.footnotes = std::sync::Arc::new(parsed.footnotes);
-                            p.source_revision = target_rev;
-                            cx.notify();
-                        }
-                    });
-                })
-                .detach();
-            });
+            if doc_text.len() <= INLINE_SYNC_PARSE_MAX_BYTES {
+                // Small/medium notes: parse inline to avoid style flicker between keystrokes.
+                let parsed = compute_inline_spans(&doc_text, last_edit.as_ref());
+                let _ = self.inline_markdown.update(cx, |state, cx| {
+                    if target_rev >= state.source_revision {
+                        state.spans = std::sync::Arc::new(parsed.spans);
+                        state.source_revision = target_rev;
+                        state.parse_millis = parsed.parse_millis;
+                        cx.notify();
+                    } else {
+                        state.dropped_updates = state.dropped_updates.saturating_add(1);
+                    }
+                });
+            } else {
+                // Large notes: debounce and parse in background to protect typing latency.
+                let text = doc_text.clone();
+                let inline_markdown = self.inline_markdown.clone();
+                self.inline_debounce.schedule(cx, move |_, cx| {
+                    let text = text.clone();
+                    let last_edit = last_edit.clone();
+                    let inline_markdown = inline_markdown.clone();
+                    cx.spawn(async move |_, cx| {
+                        let parsed = cx
+                            .background_executor()
+                            .spawn(async move { compute_inline_spans(&text, last_edit.as_ref()) })
+                            .await;
+                        let _ = inline_markdown.update(cx, |state, cx| {
+                            if target_rev >= state.source_revision {
+                                state.spans = std::sync::Arc::new(parsed.spans);
+                                state.source_revision = target_rev;
+                                state.parse_millis = parsed.parse_millis;
+                                cx.notify();
+                            } else {
+                                state.dropped_updates = state.dropped_updates.saturating_add(1);
+                            }
+                        });
+                    })
+                    .detach();
+                });
+            }
         }
 
-        // Use cached word count from document
-        let status_right = format!("{} words", word_count);
+        let (inline_parse_millis, inline_dropped_updates) = {
+            let inline = self.inline_markdown.read(cx);
+            (inline.parse_millis, inline.dropped_updates)
+        };
+        // Expose inline parser timing in status for quick perf monitoring.
+        let status_right = if inline_dropped_updates > 0 {
+            format!(
+                "{} words · inline {:.1} ms · dropped {}",
+                word_count, inline_parse_millis, inline_dropped_updates
+            )
+        } else {
+            format!(
+                "{} words · inline {:.1} ms",
+                word_count, inline_parse_millis
+            )
+        };
         // Use size_full() instead of explicit pixel dimensions to ensure proper layout
 
         let window_title = {
@@ -394,60 +405,6 @@ impl Render for RootView {
             format!("{name}{dirty} — Aster")
         };
         window.set_window_title(&window_title);
-
-        let make_view_button = |id: &'static str, icon: IconName, target: ViewMode| {
-            let selected = self.view_mode == target;
-            div()
-                .id(id)
-                .flex()
-                .items_center()
-                .justify_center()
-                .w(px(34.))
-                .h(px(28.))
-                .rounded(px(6.))
-                .text_sm()
-                .cursor_pointer()
-                .when(selected, |this| {
-                    this.bg(Theme::panel_alt()).text_color(Theme::text())
-                })
-                .when(!selected, |this| {
-                    this.text_color(Theme::muted())
-                        .hover(|this| this.bg(Theme::panel_alt()).text_color(Theme::text()))
-                })
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(move |this, _: &MouseDownEvent, _, cx| {
-                        this.view_mode = target;
-                        cx.notify();
-                    }),
-                )
-                .child(svg().path(icon.path()).size_4().text_color(if selected {
-                    Theme::text()
-                } else {
-                    Theme::muted()
-                }))
-        };
-
-        let view_controls = div()
-            .flex()
-            .items_center()
-            .gap_1()
-            .flex_shrink_0()
-            .child(make_view_button(
-                "view-editor",
-                icon_for_view_mode(ViewMode::Editor),
-                ViewMode::Editor,
-            ))
-            .child(make_view_button(
-                "view-split",
-                icon_for_view_mode(ViewMode::Split),
-                ViewMode::Split,
-            ))
-            .child(make_view_button(
-                "view-preview",
-                icon_for_view_mode(ViewMode::Preview),
-                ViewMode::Preview,
-            ));
 
         let top_chrome = div()
             .id("window-chrome")
@@ -463,22 +420,6 @@ impl Render for RootView {
                     window.start_window_move();
                 }),
             );
-
-        let split_view = div()
-            .flex()
-            .flex_row()
-            .flex_1()
-            .min_h(px(0.))
-            .min_w(px(0.))
-            .when(self.view_mode != ViewMode::Preview, |this| {
-                this.child(self.editor_view.clone())
-            })
-            .when(self.view_mode == ViewMode::Split, |this| {
-                this.child(div().w(px(1.)).bg(Theme::border()).flex_shrink_0().h_full())
-            })
-            .when(self.view_mode != ViewMode::Editor, |this| {
-                this.child(self.preview_view.clone())
-            });
 
         let resize_line_color = if self.resizing_sidebar {
             gpui::rgba(0x2d7fd299)
@@ -496,15 +437,13 @@ impl Render for RootView {
             .border_t_1()
             .border_color(Theme::border())
             .flex_shrink_0()
-            .child(div().flex_1())
-            .child(view_controls)
             .child(
-                div().flex_1().flex().justify_end().child(
+                div().w_full().flex().justify_end().child(
                     div()
                         .text_sm()
                         .text_color(Theme::muted())
                         .overflow_hidden()
-                        .max_w(px(520.))
+                        .max_w(px(640.))
                         .child(status_right),
                 ),
             );
@@ -608,32 +547,10 @@ impl Render for RootView {
                             .min_w(px(0.))
                             .flex()
                             .flex_col()
-                            .child(split_view),
+                            .child(self.editor_view.clone()),
                     ),
             )
             .child(bottom_bar)
             .child(self.notifications.clone())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use gpui_component::IconNamed;
-
-    #[test]
-    fn view_mode_icons_match_expected_semantics() {
-        assert_eq!(
-            icon_for_view_mode(ViewMode::Editor).path(),
-            IconName::PanelLeft.path()
-        );
-        assert_eq!(
-            icon_for_view_mode(ViewMode::Split).path(),
-            IconName::LayoutDashboard.path()
-        );
-        assert_eq!(
-            icon_for_view_mode(ViewMode::Preview).path(),
-            IconName::PanelRight.path()
-        );
     }
 }

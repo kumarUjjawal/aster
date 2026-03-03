@@ -6,6 +6,16 @@ use std::ops::Range;
 
 use crate::model::undo::{EditOperation, UndoHistory};
 
+#[derive(Clone, Debug)]
+pub struct EditDelta {
+    pub start_char: usize,
+    pub old_end_char: usize,
+    pub new_end_char: usize,
+    pub start_byte: usize,
+    pub old_end_byte: usize,
+    pub new_end_byte: usize,
+}
+
 #[derive(Clone)]
 pub struct DocumentState {
     pub path: Option<Utf8PathBuf>,
@@ -22,6 +32,8 @@ pub struct DocumentState {
     pub undo_history: UndoHistory,
     /// Pending edit state for recording operations
     pending_edit: Option<PendingEdit>,
+    /// Most recent edit delta, updated on each mutation
+    pub last_edit: Option<EditDelta>,
 }
 
 /// Temporary state captured before an edit for undo history
@@ -46,14 +58,27 @@ impl DocumentState {
             word_count_cache: Some(0),
             undo_history: UndoHistory::default(),
             pending_edit: None,
+            last_edit: None,
         }
     }
 
     pub fn set_text(&mut self, text: &str) {
+        let old_chars = self.rope.len_chars();
+        let old_bytes = self.rope.len_bytes();
         self.rope = Rope::from_str(text);
+        let new_chars = self.rope.len_chars();
+        let new_bytes = self.rope.len_bytes();
         self.cursor = self.rope.len_chars();
         self.clear_selection();
         self.bump_revision();
+        self.last_edit = Some(EditDelta {
+            start_char: 0,
+            old_end_char: old_chars,
+            new_end_char: new_chars,
+            start_byte: 0,
+            old_end_byte: old_bytes,
+            new_end_byte: new_bytes,
+        });
         // Don't compute hash here - save_snapshot will handle dirty state
         // Don't compute word count here - it will be computed lazily
         self.word_count_cache = None;
@@ -113,9 +138,21 @@ impl DocumentState {
     }
 
     pub fn insert(&mut self, char_idx: usize, text: &str) {
-        self.rope.insert(char_idx, text);
+        let clamped = char_idx.min(self.rope.len_chars());
+        let start_byte = self.rope.char_to_byte(clamped);
+        self.rope.insert(clamped, text);
+        let new_end_char = clamped.saturating_add(text.chars().count());
+        let new_end_byte = start_byte.saturating_add(text.len());
         self.bump_revision();
         self.dirty = true;
+        self.last_edit = Some(EditDelta {
+            start_char: clamped,
+            old_end_char: clamped,
+            new_end_char,
+            start_byte,
+            old_end_byte: start_byte,
+            new_end_byte,
+        });
         self.clear_selection();
         self.word_count_cache = None; // Invalidate cache
     }
@@ -124,9 +161,21 @@ impl DocumentState {
         if range.start >= range.end || range.end > self.rope.len_chars() {
             return;
         }
+        let start_char = range.start;
+        let old_end_char = range.end;
+        let start_byte = self.rope.char_to_byte(range.start);
+        let old_end_byte = self.rope.char_to_byte(range.end);
         self.rope.remove(range);
         self.bump_revision();
         self.dirty = true;
+        self.last_edit = Some(EditDelta {
+            start_char,
+            old_end_char,
+            new_end_char: start_char,
+            start_byte,
+            old_end_byte,
+            new_end_byte: start_byte,
+        });
         self.cursor = self.cursor.min(self.rope.len_chars());
         self.clear_selection();
         self.word_count_cache = None; // Invalidate cache

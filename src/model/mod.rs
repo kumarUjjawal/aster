@@ -1,3 +1,3 @@
 pub mod document;
-pub mod preview;
+pub mod inline_markdown;
 pub mod undo;

@@ -10,7 +10,7 @@
 </table>
 </div>
 
-**Aster** is a Markdown editor built in Rust on top of [GPUI](https://www.gpui.rs/), the GPU-accelerated UI framework from the [Zed](https://zed.dev/) team. It delivers a live split view: rope-backed editing on the left, formatted preview on the right. The goal is to create a fast and efficient markdown editor using GPU rendering. Why am I using `Rope` data structure? Because it is fast and provides several benefits over the regular `String`. If you want to learn more, check out this brilliant article by the `Zed` team: [Rope & SumTree](https://zed.dev/blog/zed-decoded-rope-sumtree). `Zed` uses their own version of `Rope` which isn't really a rope but a `SumTree`. Currently, I am using the regular `Rope` and if there are needs, I might switch to the `Zed` version. Why `gpui`? Because it's GPU accelerated (Metal on macOS) and it provides precise control over the layout, saving us from the hell that is virtual DOM.
+**Aster** is a Markdown editor built in Rust on top of [GPUI](https://www.gpui.rs/), the GPU-accelerated UI framework from the [Zed](https://zed.dev/) team. It focuses on a fast inline-editing experience with rope-backed text operations and background markdown span parsing. Why am I using `Rope` data structure? Because it is fast and provides several benefits over the regular `String`. If you want to learn more, check out this brilliant article by the `Zed` team: [Rope & SumTree](https://zed.dev/blog/zed-decoded-rope-sumtree). `Zed` uses their own version of `Rope` which isn't really a rope but a `SumTree`. Currently, I am using the regular `Rope` and if there are needs, I might switch to the `Zed` version. Why `gpui`? Because it's GPU accelerated (Metal on macOS) and it provides precise control over the layout, saving us from the hell that is virtual DOM.
 
 <p align="center">
   <img src="./screensot-ui.png" alt="Aster Screenshot" width="800"/>
@@ -43,9 +43,9 @@ Pre-built macOS applications are available for direct download:
 - Native macOS windowing with Metal rendering via GPUI
 - Rope-backed text model (`ropey`) for fast inserts/deletes
 - Live Markdown parse and render (CommonMark + GFM extensions)
+- Inline markdown rendering in the editor with background span parsing
 - Support for tables, footnotes, strikethrough, and task lists
-- Document outline in the sidebar (click any heading to jump in preview)
-- Centered view switcher for Editor / Split / Preview modes
+- Document outline in the sidebar (click any heading to jump in editor)
 - Lightweight Markdown syntax highlighting in the editor
 - In-editor Find with match navigation (`Cmd+F`, `Cmd+G`, `Shift+Cmd+G`)
 - Image loading (local)
@@ -178,17 +178,17 @@ cargo bundle --release --target x86_64-apple-darwin
 ## Architecture (brief)
 
 - `src/app.rs` / `src/main.rs`: window bootstrap, logging
-- `src/model/`: `DocumentState` (rope, cursor, dirty tracking), `PreviewState` (rendered blocks)
-- `src/services/`: Markdown parsing into structured blocks; file I/O helpers
-- `src/ui/`: editor view (rope-backed input), preview view (styled blocks), root layout (split panes)
+- `src/model/`: `DocumentState` (rope, cursor, dirty tracking), `InlineMarkdownState` (background span snapshots)
+- `src/services/`: inline syntax span parsing and file I/O helpers
+- `src/ui/`: editor view (rope-backed input + inline render), outline sidebar, root layout
 - `src/ui/theme.rs`: light palette and typography tokens
 
 ---
 
 ## Current Status
 
-- Split edit/preview layout renders headings, italics, bold, code blocks, list items, quotes, and tables
-- Light theme applied across panels and preview components
+- Single-pane inline editing renders headings, emphasis, code, lists, and links directly in the editor
+- Light theme applied across editor and sidebar panels
 - Keyboard shortcuts for file, edit, view, and search workflows
 - Outline sidebar with clickable heading navigation
 - Lightweight syntax highlighting in the editor for Markdown structure

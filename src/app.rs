@@ -206,11 +206,10 @@ fn build_root_view(
     initial_path: Option<Utf8PathBuf>,
 ) -> gpui::Entity<RootView> {
     let document = cx.new(|_| RootView::new_document());
-    let preview = cx.new(|_| RootView::new_preview());
+    let inline_markdown = cx.new(|_| RootView::new_inline_markdown());
     let notifications = cx.new(|cx| NotificationList::new(window, cx));
-    let editor_view = cx.new(|_| RootView::build_editor(document.clone()));
-    let preview_view = cx.new(|_| RootView::build_preview(preview.clone()));
-    let file_explorer_view = cx.new(|_| RootView::build_file_explorer(preview.clone()));
+    let editor_view = cx.new(|_| RootView::build_editor(document.clone(), inline_markdown.clone()));
+    let file_explorer_view = cx.new(|_| RootView::build_file_explorer(document.clone()));
 
     if let Some(path) = initial_path.as_ref() {
         if let Ok(text) = read_to_string(path) {
@@ -227,9 +226,8 @@ fn build_root_view(
     cx.new(|_| {
         RootView::new(
             document,
-            preview,
+            inline_markdown,
             editor_view,
-            preview_view,
             file_explorer_view,
             notifications,
         )

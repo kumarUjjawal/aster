@@ -1,7 +1,8 @@
 use crate::commands::{Copy, Cut, Find, FindNext, FindPrevious, Paste, Redo, SelectAll, Undo};
 use crate::model::document::DocumentState;
+use crate::model::inline_markdown::InlineMarkdownState;
 use crate::services::settings;
-use crate::services::syntax::{SyntaxKind, markdown_spans};
+use crate::services::syntax::{SyntaxKind, SyntaxSpan};
 use crate::ui::text_utils::ellipsize_chars;
 use crate::ui::theme::Theme;
 use gpui::prelude::FluentBuilder as _;
@@ -13,6 +14,7 @@ use gpui::{
 };
 use std::ops::Range;
 use std::panic::AssertUnwindSafe;
+use std::sync::Arc;
 use std::time::Duration;
 
 struct SearchCache {
@@ -21,16 +23,159 @@ struct SearchCache {
     matches: Vec<Range<usize>>,
 }
 
+#[derive(Clone, Debug)]
+struct ProjectionSegment {
+    source: Range<usize>,
+    display_start: usize,
+    hidden: bool,
+}
+
+#[derive(Clone, Debug)]
+struct DisplayProjection {
+    display_text: String,
+    source_len: usize,
+    segments: Vec<ProjectionSegment>,
+}
+
+impl DisplayProjection {
+    fn from_source(source: &str, spans: &[SyntaxSpan]) -> Self {
+        let source_len = source.len();
+        let hidden = merged_hidden_ranges(spans);
+        if hidden.is_empty() {
+            return Self {
+                display_text: source.to_string(),
+                source_len,
+                segments: vec![ProjectionSegment {
+                    source: 0..source_len,
+                    display_start: 0,
+                    hidden: false,
+                }],
+            };
+        }
+
+        let mut display_text = String::with_capacity(source_len);
+        let mut segments = Vec::new();
+        let mut source_ix = 0usize;
+        let mut display_ix = 0usize;
+
+        for hidden_range in hidden {
+            if hidden_range.start > source_ix {
+                let visible = source_ix..hidden_range.start;
+                let slice = &source[visible.clone()];
+                display_text.push_str(slice);
+                segments.push(ProjectionSegment {
+                    source: visible,
+                    display_start: display_ix,
+                    hidden: false,
+                });
+                display_ix += slice.len();
+            }
+
+            if hidden_range.end > hidden_range.start {
+                segments.push(ProjectionSegment {
+                    source: hidden_range.clone(),
+                    display_start: display_ix,
+                    hidden: true,
+                });
+            }
+            source_ix = hidden_range.end;
+        }
+
+        if source_ix < source_len {
+            let visible = source_ix..source_len;
+            let slice = &source[visible.clone()];
+            display_text.push_str(slice);
+            segments.push(ProjectionSegment {
+                source: visible,
+                display_start: display_ix,
+                hidden: false,
+            });
+        }
+
+        if segments.is_empty() {
+            segments.push(ProjectionSegment {
+                source: 0..0,
+                display_start: 0,
+                hidden: false,
+            });
+        }
+
+        Self {
+            display_text,
+            source_len,
+            segments,
+        }
+    }
+
+    fn source_to_display_byte(&self, source_byte: usize) -> usize {
+        let source_byte = source_byte.min(self.source_len);
+        let mut mapped = 0usize;
+        for segment in &self.segments {
+            if source_byte < segment.source.start {
+                return mapped;
+            }
+            if source_byte <= segment.source.end {
+                if segment.hidden {
+                    return segment.display_start;
+                }
+                return segment.display_start + (source_byte - segment.source.start);
+            }
+
+            mapped = if segment.hidden {
+                segment.display_start
+            } else {
+                segment.display_start + segment.source.len()
+            };
+        }
+        self.display_text.len()
+    }
+
+    fn display_to_source_byte(&self, display_byte: usize) -> usize {
+        let display_byte = display_byte.min(self.display_text.len());
+        for segment in &self.segments {
+            if display_byte < segment.display_start {
+                return segment.source.start;
+            }
+            if segment.hidden {
+                continue;
+            }
+
+            let display_end = segment.display_start + segment.source.len();
+            if display_byte <= display_end {
+                return segment.source.start + (display_byte - segment.display_start);
+            }
+        }
+        self.source_len
+    }
+
+    fn project_highlights(
+        &self,
+        highlights: Vec<(Range<usize>, HighlightStyle)>,
+    ) -> Vec<(Range<usize>, HighlightStyle)> {
+        highlights
+            .into_iter()
+            .filter_map(|(range, style)| {
+                let start = self.source_to_display_byte(range.start);
+                let end = self.source_to_display_byte(range.end);
+                if start < end {
+                    Some((start..end, style))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+}
+
 pub struct EditorView {
     document: Entity<DocumentState>,
+    inline_markdown: Entity<InlineMarkdownState>,
     focus_handle: Option<FocusHandle>,
     caret_visible: bool,
     blink_task: Option<gpui::Task<()>>,
     scroll_handle: ScrollHandle,
     /// Cached text with revision to avoid repeated rope-to-string conversions
     cached_text: Option<(u64, String)>,
-    /// Cached syntax highlights keyed by revision.
-    cached_syntax_highlights: Option<(u64, Vec<(Range<usize>, HighlightStyle)>)>,
     /// Find panel state.
     search_active: bool,
     search_query: String,
@@ -41,15 +186,18 @@ pub struct EditorView {
 }
 
 impl EditorView {
-    pub fn new(document: Entity<DocumentState>) -> Self {
+    pub fn new(
+        document: Entity<DocumentState>,
+        inline_markdown: Entity<InlineMarkdownState>,
+    ) -> Self {
         Self {
             document,
+            inline_markdown,
             focus_handle: None,
             caret_visible: true,
             blink_task: None,
             scroll_handle: ScrollHandle::new(),
             cached_text: None,
-            cached_syntax_highlights: None,
             search_active: false,
             search_query: String::new(),
             search_current_match: 0,
@@ -88,24 +236,17 @@ impl EditorView {
         })
     }
 
-    fn syntax_highlights(
-        &mut self,
-        text: &str,
-        revision: u64,
+    fn inline_syntax_highlights(
+        &self,
+        spans: &[SyntaxSpan],
     ) -> Vec<(Range<usize>, HighlightStyle)> {
-        if let Some((cached_revision, highlights)) = &self.cached_syntax_highlights
-            && *cached_revision == revision
-        {
-            return highlights.clone();
-        }
-
-        let highlights = markdown_spans(text)
-            .into_iter()
-            .map(|span| (span.range, syntax_style(span.kind)))
-            .collect::<Vec<_>>();
-
-        self.cached_syntax_highlights = Some((revision, highlights.clone()));
-        highlights
+        spans
+            .iter()
+            .map(|span| {
+                let hide_markers = is_inline_hidden_kind(span.kind);
+                (span.range.clone(), syntax_style(span.kind, hide_markers))
+            })
+            .collect()
     }
 
     fn current_text_and_revision(&mut self, cx: &mut Context<Self>) -> (String, u64) {
@@ -288,13 +429,19 @@ impl EditorView {
         }
     }
 
-    fn reveal_pending_byte(&mut self, text_layout: &gpui::TextLayout, window: &mut Window) {
-        let Some(target_byte) = self.pending_scroll_to_byte else {
+    fn reveal_pending_byte(
+        &mut self,
+        text_layout: &gpui::TextLayout,
+        projection: &DisplayProjection,
+        window: &mut Window,
+    ) {
+        let Some(target_source_byte) = self.pending_scroll_to_byte else {
             return;
         };
+        let target_display_byte = projection.source_to_display_byte(target_source_byte);
 
         let Some(target_pos) = std::panic::catch_unwind(AssertUnwindSafe(|| {
-            text_layout.position_for_index(target_byte)
+            text_layout.position_for_index(target_display_byte)
         }))
         .ok()
         .flatten() else {
@@ -379,14 +526,24 @@ impl Render for EditorView {
         }
 
         let doc = self.document.read(cx);
-        let cursor_byte = doc.char_to_byte(doc.cursor);
+        let cursor_source_byte = doc.char_to_byte(doc.cursor);
         let show_caret = doc.selection.is_none();
         let draw_caret = show_caret && is_focused && self.caret_visible;
-
-        let syntax_highlights = self.syntax_highlights(&text_owned, doc_revision);
+        let inline_spans = {
+            let inline = self.inline_markdown.read(cx);
+            inline.spans.clone()
+        };
+        let projection = Arc::new(DisplayProjection::from_source(
+            &text_owned,
+            inline_spans.as_ref(),
+        ));
+        let cursor_display_byte = projection.source_to_display_byte(cursor_source_byte);
+        let syntax_highlights =
+            projection.project_highlights(self.inline_syntax_highlights(inline_spans.as_ref()));
         let (search_highlights, search_match_count) =
             self.search_highlights(&text_owned, doc_revision);
-        let selection_highlights = self.selection_highlights(&doc);
+        let search_highlights = projection.project_highlights(search_highlights);
+        let selection_highlights = projection.project_highlights(self.selection_highlights(&doc));
 
         let syntax_and_search = if search_highlights.is_empty() {
             syntax_highlights
@@ -400,18 +557,19 @@ impl Render for EditorView {
             combine_highlights(syntax_and_search, selection_highlights).collect()
         };
 
-        // Safety guard for GPUI macOS shaping: avoid mixed style runs on non-ASCII
-        // content, which can trigger invalid UTF-8 run boundaries in gpui 0.2.2.
-        let mut styled = StyledText::new(text_owned.clone());
-        if text_owned.is_ascii() {
-            let safe_highlights = sanitize_highlights(&text_owned, all_highlights);
-            if !safe_highlights.is_empty() {
-                styled = styled.with_highlights(safe_highlights);
-            }
+        let mut styled = StyledText::new(projection.display_text.clone());
+        let safe_highlights = sanitize_highlights(&projection.display_text, all_highlights);
+        if !safe_highlights.is_empty() {
+            // On some platforms GPUI can panic while shaping mixed-style Unicode text.
+            // Fall back to plain text for that frame rather than dropping inline mode globally.
+            styled = std::panic::catch_unwind(AssertUnwindSafe(|| {
+                StyledText::new(projection.display_text.clone()).with_highlights(safe_highlights)
+            }))
+            .unwrap_or_else(|_| StyledText::new(projection.display_text.clone()));
         }
 
         let text_layout = styled.layout().clone();
-        self.reveal_pending_byte(&text_layout, window);
+        self.reveal_pending_byte(&text_layout, projection.as_ref(), window);
 
         let search_match_display = if search_match_count == 0 {
             0
@@ -541,6 +699,7 @@ impl Render for EditorView {
                 let focus_handle = focus_handle.clone();
                 let doc_handle = self.document.clone();
                 let layout_for_event = text_layout.clone();
+                let projection_for_event = projection.clone();
                 move |event: &MouseDownEvent, window: &mut Window, cx_app: &mut App| {
                     focus_handle.focus(window);
                     let _ = doc_handle.update(cx_app, |doc, cx| {
@@ -552,7 +711,9 @@ impl Render for EditorView {
                             Ok(ix) => ix,
                             Err(ix) => ix,
                         });
-                        if let Some(byte_idx) = byte_idx.map(|b| doc.byte_to_char(b)) {
+                        let source_byte =
+                            byte_idx.map(|b| projection_for_event.display_to_source_byte(b));
+                        if let Some(byte_idx) = source_byte.map(|b| doc.byte_to_char(b)) {
                             if event.modifiers.shift {
                                 let anchor = doc.selection_anchor.unwrap_or(doc.cursor);
                                 doc.set_selection(anchor, byte_idx);
@@ -567,6 +728,7 @@ impl Render for EditorView {
             .on_mouse_move({
                 let doc_handle = self.document.clone();
                 let layout_for_event = text_layout.clone();
+                let projection_for_event = projection.clone();
                 move |event: &MouseMoveEvent, _window: &mut Window, cx_app: &mut App| {
                     if !event.dragging() {
                         return;
@@ -580,7 +742,9 @@ impl Render for EditorView {
                             Ok(ix) => ix,
                             Err(ix) => ix,
                         });
-                        if let Some(byte_idx) = byte_idx.map(|b| doc.byte_to_char(b)) {
+                        let source_byte =
+                            byte_idx.map(|b| projection_for_event.display_to_source_byte(b));
+                        if let Some(byte_idx) = source_byte.map(|b| doc.byte_to_char(b)) {
                             let anchor = doc.selection_anchor.unwrap_or(doc.cursor);
                             doc.set_selection(anchor, byte_idx);
                             cx.notify();
@@ -800,7 +964,7 @@ impl Render for EditorView {
                             }
 
                             let caret_pos = std::panic::catch_unwind(AssertUnwindSafe(|| {
-                                text_layout.position_for_index(cursor_byte)
+                                text_layout.position_for_index(cursor_display_byte)
                             }))
                             .ok()
                             .flatten();
@@ -877,14 +1041,31 @@ impl Render for EditorView {
     }
 }
 
-fn syntax_style(kind: SyntaxKind) -> HighlightStyle {
+fn syntax_style(kind: SyntaxKind, hide_markers: bool) -> HighlightStyle {
+    if hide_markers {
+        let hidden_color = match kind {
+            SyntaxKind::InlineCodeMarker => Theme::code_block_bg(),
+            _ => Theme::panel(),
+        };
+        let hidden_background = match kind {
+            SyntaxKind::InlineCodeMarker => Some(Theme::code_block_bg().into()),
+            _ => None,
+        };
+        return HighlightStyle {
+            color: Some(hidden_color.into()),
+            background_color: hidden_background,
+            ..Default::default()
+        };
+    }
+
     match kind {
         SyntaxKind::HeadingMarker => HighlightStyle {
-            color: Some(Theme::accent().into()),
+            color: Some(Theme::muted().into()),
             font_weight: Some(FontWeight::BOLD),
             ..Default::default()
         },
         SyntaxKind::HeadingText => HighlightStyle {
+            color: Some(Theme::accent().into()),
             font_weight: Some(FontWeight::BOLD),
             ..Default::default()
         },
@@ -894,11 +1075,20 @@ fn syntax_style(kind: SyntaxKind) -> HighlightStyle {
         },
         SyntaxKind::ListMarker | SyntaxKind::TaskMarker => HighlightStyle {
             color: Some(Theme::accent().into()),
+            font_weight: Some(FontWeight::BOLD),
             ..Default::default()
         },
-        SyntaxKind::CodeFence | SyntaxKind::InlineCode => HighlightStyle {
+        SyntaxKind::CodeFence => HighlightStyle {
+            color: Some(Theme::muted().into()),
+            ..Default::default()
+        },
+        SyntaxKind::InlineCodeMarker | SyntaxKind::InlineCode => HighlightStyle {
             color: Some(gpui::rgb(0x1f6f8b).into()),
-            background_color: Some(hsla_with_alpha(Theme::border(), 0.35)),
+            background_color: Some(hsla_with_alpha(Theme::code_block_bg(), 1.0)),
+            ..Default::default()
+        },
+        SyntaxKind::LinkTextDelimiter | SyntaxKind::LinkUrlDelimiter => HighlightStyle {
+            color: Some(Theme::muted().into()),
             ..Default::default()
         },
         SyntaxKind::LinkText => HighlightStyle {
@@ -919,7 +1109,55 @@ fn syntax_style(kind: SyntaxKind) -> HighlightStyle {
             color: Some(Theme::muted().into()),
             ..Default::default()
         },
+        SyntaxKind::EmphasisText => HighlightStyle {
+            font_style: Some(FontStyle::Italic),
+            ..Default::default()
+        },
+        SyntaxKind::StrongText => HighlightStyle {
+            font_weight: Some(FontWeight::BOLD),
+            ..Default::default()
+        },
     }
+}
+
+fn is_inline_hidden_kind(kind: SyntaxKind) -> bool {
+    matches!(
+        kind,
+        SyntaxKind::HeadingMarker
+            | SyntaxKind::QuoteMarker
+            | SyntaxKind::InlineCodeMarker
+            | SyntaxKind::EmphasisMarker
+            | SyntaxKind::CodeFence
+            | SyntaxKind::LinkTextDelimiter
+            | SyntaxKind::LinkUrlDelimiter
+            | SyntaxKind::LinkUrl
+    )
+}
+
+fn merged_hidden_ranges(spans: &[SyntaxSpan]) -> Vec<Range<usize>> {
+    let mut hidden = spans
+        .iter()
+        .filter(|span| is_inline_hidden_kind(span.kind))
+        .map(|span| span.range.clone())
+        .collect::<Vec<_>>();
+    if hidden.is_empty() {
+        return hidden;
+    }
+
+    hidden.sort_by_key(|r| (r.start, r.end));
+    let mut merged = Vec::with_capacity(hidden.len());
+    let mut current = hidden[0].clone();
+
+    for range in hidden.into_iter().skip(1) {
+        if range.start <= current.end {
+            current.end = current.end.max(range.end);
+        } else {
+            merged.push(current);
+            current = range;
+        }
+    }
+    merged.push(current);
+    merged
 }
 
 fn pop_last_char(s: &mut String) {
@@ -1018,6 +1256,7 @@ fn sanitize_highlights(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::syntax::markdown_spans;
 
     #[test]
     fn find_matches_ascii_case_insensitive() {
@@ -1048,5 +1287,21 @@ mod tests {
         assert_eq!(range.end, 5);
         assert!(text.is_char_boundary(range.start));
         assert!(text.is_char_boundary(range.end));
+    }
+
+    #[test]
+    fn display_projection_removes_inline_markers_without_spacing_artifacts() {
+        let source = "2. **bold** there";
+        let spans = markdown_spans(source);
+        let projection = DisplayProjection::from_source(source, &spans);
+        assert_eq!(projection.display_text, "2. bold there");
+    }
+
+    #[test]
+    fn display_projection_hides_heading_marker_and_following_space() {
+        let source = "# Hi";
+        let spans = markdown_spans(source);
+        let projection = DisplayProjection::from_source(source, &spans);
+        assert_eq!(projection.display_text, "Hi");
     }
 }
