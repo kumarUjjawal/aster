@@ -1,7 +1,7 @@
 use crate::commands::{
     About, CloseWindow, Copy, Cut, Find, FindNext, FindPrevious, FontSizeDecrease,
-    FontSizeIncrease, FontSizeReset, NewFile, OpenFile, OpenFolder, Paste, Quit, Redo, SaveFile,
-    SaveFileAs, SelectAll, Undo,
+    FontSizeIncrease, FontSizeReset, NewFile, OpenFile, Paste, Quit, Redo, SaveFile, SaveFileAs,
+    SelectAll, Undo,
 };
 use crate::services::assets::AsterAssetSource;
 use crate::services::fs::{read_to_string, write_atomic};
@@ -38,7 +38,6 @@ pub fn run() {
         cx.bind_keys([
             KeyBinding::new("cmd-n", NewFile, None),
             KeyBinding::new("cmd-o", OpenFile, None),
-            KeyBinding::new("shift-cmd-o", OpenFolder, None),
             KeyBinding::new("cmd-s", SaveFile, None),
             KeyBinding::new("shift-cmd-s", SaveFileAs, None),
             KeyBinding::new("cmd-w", CloseWindow, None),
@@ -74,7 +73,6 @@ pub fn run() {
                 items: vec![
                     MenuItem::action("New", NewFile),
                     MenuItem::action("Open…", OpenFile),
-                    MenuItem::action("Open Folder…", OpenFolder),
                     MenuItem::separator(),
                     MenuItem::action("Save", SaveFile),
                     MenuItem::action("Save As…", SaveFileAs),
@@ -209,15 +207,10 @@ fn build_root_view(
 ) -> gpui::Entity<RootView> {
     let document = cx.new(|_| RootView::new_document());
     let preview = cx.new(|_| RootView::new_preview());
-    let file_tree = cx.new(|_| RootView::new_file_tree());
     let notifications = cx.new(|cx| NotificationList::new(window, cx));
     let editor_view = cx.new(|_| RootView::build_editor(document.clone()));
     let preview_view = cx.new(|_| RootView::build_preview(preview.clone()));
-    let file_explorer_view =
-        cx.new(|_| RootView::build_file_explorer(file_tree.clone(), preview.clone()));
-
-    // File tree starts empty - user can open a folder explicitly
-    // (auto-initializing with home dir triggers macOS permission dialogs)
+    let file_explorer_view = cx.new(|_| RootView::build_file_explorer(preview.clone()));
 
     if let Some(path) = initial_path.as_ref() {
         if let Ok(text) = read_to_string(path) {
@@ -235,7 +228,6 @@ fn build_root_view(
         RootView::new(
             document,
             preview,
-            file_tree,
             editor_view,
             preview_view,
             file_explorer_view,

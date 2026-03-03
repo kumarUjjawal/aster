@@ -1,13 +1,11 @@
 use crate::commands::{
-    CloseWindow, FontSizeDecrease, FontSizeIncrease, FontSizeReset, NewFile, OpenFile, OpenFolder,
-    SaveFile, SaveFileAs,
+    CloseWindow, FontSizeDecrease, FontSizeIncrease, FontSizeReset, NewFile, OpenFile, SaveFile,
+    SaveFileAs,
 };
 use crate::model::document::DocumentState;
-use crate::model::file_tree::FileTreeState;
 use crate::model::preview::PreviewState;
 use crate::services::fs::{
-    pick_folder_async, pick_open_markdown_path_async, pick_save_path_async, read_to_string,
-    write_atomic,
+    pick_open_markdown_path_async, pick_save_path_async, read_to_string, write_atomic,
 };
 use crate::services::markdown::render_blocks;
 use crate::services::settings::{self, Settings};
@@ -46,7 +44,6 @@ fn icon_for_view_mode(mode: ViewMode) -> IconName {
 pub struct RootView {
     document: Entity<DocumentState>,
     preview: Entity<PreviewState>,
-    file_tree: Entity<FileTreeState>,
     editor_view: Entity<crate::ui::editor::EditorView>,
     preview_view: Entity<crate::ui::preview::PreviewView>,
     file_explorer_view: Entity<crate::ui::file_explorer::FileExplorerView>,
@@ -67,7 +64,6 @@ impl RootView {
     pub fn new(
         document: Entity<DocumentState>,
         preview: Entity<PreviewState>,
-        file_tree: Entity<FileTreeState>,
         editor_view: Entity<crate::ui::editor::EditorView>,
         preview_view: Entity<crate::ui::preview::PreviewView>,
         file_explorer_view: Entity<crate::ui::file_explorer::FileExplorerView>,
@@ -76,7 +72,6 @@ impl RootView {
         Self {
             document,
             preview,
-            file_tree,
             editor_view,
             preview_view,
             file_explorer_view,
@@ -106,15 +101,10 @@ impl RootView {
         PreviewView::new(preview)
     }
 
-    pub fn new_file_tree() -> FileTreeState {
-        FileTreeState::new()
-    }
-
     pub fn build_file_explorer(
-        file_tree: Entity<FileTreeState>,
         preview: Entity<PreviewState>,
     ) -> crate::ui::file_explorer::FileExplorerView {
-        FileExplorerView::new(file_tree, preview)
+        FileExplorerView::new(preview)
     }
 
     fn save_document(&mut self, cx: &mut Context<Self>, force_save_as: bool) {
@@ -324,24 +314,6 @@ impl RootView {
         self.save_document(cx, true);
     }
 
-    fn action_open_folder(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        let receiver = pick_folder_async(cx);
-        let file_tree = self.file_tree.clone();
-
-        cx.spawn(async move |_, cx| {
-            if let Ok(Ok(Some(paths))) = receiver.await {
-                if let Some(path) = paths.into_iter().next() {
-                    if let Ok(utf8_path) = Utf8PathBuf::try_from(path) {
-                        let _ = file_tree.update(cx, |tree, cx| {
-                            tree.set_root(utf8_path, cx);
-                        });
-                    }
-                }
-            }
-        })
-        .detach();
-    }
-
     fn action_close_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.confirm_can_discard_changes(window, cx, "Save changes before closing?") {
             return;
@@ -352,14 +324,6 @@ impl RootView {
 
 impl Render for RootView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // Check if file explorer has a pending file to open
-        if let Some(path) = self
-            .file_tree
-            .update(cx, |tree, _| tree.take_pending_open())
-        {
-            self.open_path(&path, window, cx);
-        }
-
         let (doc_path, doc_dirty, doc_revision, word_count) = {
             self.document.update(cx, |doc, _| {
                 (
@@ -558,9 +522,6 @@ impl Render for RootView {
             .on_action(cx.listener(|this, _: &OpenFile, window, cx| {
                 this.action_open_file(window, cx);
             }))
-            .on_action(cx.listener(|this, _: &OpenFolder, window, cx| {
-                this.action_open_folder(window, cx);
-            }))
             .on_action(cx.listener(|this, _: &SaveFile, window, cx| {
                 this.action_save(window, cx);
             }))
@@ -615,7 +576,7 @@ impl Render for RootView {
                     .flex()
                     .flex_row()
                     .child({
-                        // Update the file explorer width to match our state
+                        // Keep the sidebar width in sync with the resize state
                         let fe = self.file_explorer_view.clone();
                         let width = self.sidebar_width;
                         let _ = fe.update(cx, |view, cx| {

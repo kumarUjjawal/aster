@@ -15,7 +15,6 @@ actions!(
         FontSizeReset,
         NewFile,
         OpenFile,
-        OpenFolder,
         Paste,
         Quit,
         Redo,

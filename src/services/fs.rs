@@ -1,7 +1,7 @@
 use crate::error::{AppError, AppResult};
 use camino::Utf8PathBuf;
 use futures::channel::oneshot;
-use gpui::{App, PathPromptOptions};
+use gpui::App;
 use rfd::AsyncFileDialog;
 use std::fs;
 use std::future::Future;
@@ -39,17 +39,6 @@ pub fn is_markdown_path(path: &Utf8PathBuf) -> bool {
         ext.eq_ignore_ascii_case("md")
             || ext.eq_ignore_ascii_case("markdown")
             || ext.eq_ignore_ascii_case("mdown")
-    })
-}
-
-/// Async version of pick_folder using GPUI's native dialog
-/// Returns a receiver that will contain the selected folder path
-pub fn pick_folder_async(cx: &App) -> oneshot::Receiver<Result<Option<Vec<PathBuf>>>> {
-    cx.prompt_for_paths(PathPromptOptions {
-        files: false,
-        directories: true,
-        multiple: false,
-        prompt: None,
     })
 }
 

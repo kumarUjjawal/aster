@@ -49,7 +49,6 @@ Pre-built macOS applications are available for direct download:
 - Lightweight Markdown syntax highlighting in the editor
 - In-editor Find with match navigation (`Cmd+F`, `Cmd+G`, `Shift+Cmd+G`)
 - Image loading (local)
-- File explorer sidebar with folder navigation
 - Atomic file saves with dirty-state tracking; open/save dialogs via `rfd`
 
 ---
@@ -60,7 +59,6 @@ Pre-built macOS applications are available for direct download:
 
 - `Cmd+N`: New file
 - `Cmd+O`: Open file
-- `Shift+Cmd+O`: Open folder
 - `Cmd+S`: Save
 - `Shift+Cmd+S`: Save As
 - `Cmd+W`: Close window
@@ -192,7 +190,7 @@ cargo bundle --release --target x86_64-apple-darwin
 - Split edit/preview layout renders headings, italics, bold, code blocks, list items, quotes, and tables
 - Light theme applied across panels and preview components
 - Keyboard shortcuts for file, edit, view, and search workflows
-- File explorer sidebar for navigating markdown files, plus clickable heading outline
+- Outline sidebar with clickable heading navigation
 - Lightweight syntax highlighting in the editor for Markdown structure
 - In-editor find flow with next/previous navigation
 - Image rendering (local)
