@@ -485,6 +485,21 @@ impl Render for RootView {
                 ViewMode::Preview,
             ));
 
+        let top_chrome = div()
+            .id("window-chrome")
+            .h(px(38.))
+            .w_full()
+            .bg(Theme::panel())
+            .border_b_1()
+            .border_color(Theme::border())
+            .flex_shrink_0()
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|_, _: &MouseDownEvent, window, _| {
+                    window.start_window_move();
+                }),
+            );
+
         let split_view = div()
             .flex()
             .flex_row()
@@ -500,6 +515,12 @@ impl Render for RootView {
             .when(self.view_mode != ViewMode::Editor, |this| {
                 this.child(self.preview_view.clone())
             });
+
+        let resize_line_color = if self.resizing_sidebar {
+            gpui::rgba(0x2d7fd299)
+        } else {
+            Theme::border()
+        };
 
         let bottom_bar = div()
             .flex()
@@ -585,6 +606,7 @@ impl Render for RootView {
                     }
                 }),
             )
+            .child(top_chrome)
             .child(
                 div()
                     .flex_1()
@@ -605,11 +627,11 @@ impl Render for RootView {
                     .child(
                         div()
                             .id("sidebar-resize-handle")
-                            .w(px(4.))
+                            .w(px(1.))
                             .h_full()
                             .cursor_col_resize()
-                            .bg(gpui::transparent_black())
-                            .hover(|s| s.bg(gpui::hsla(0.0, 0.0, 0.5, 0.3)))
+                            .bg(resize_line_color)
+                            .hover(|s| s.bg(gpui::rgba(0x2d7fd24d)))
                             .on_mouse_down(
                                 MouseButton::Left,
                                 cx.listener(|this, _: &MouseDownEvent, _, cx| {

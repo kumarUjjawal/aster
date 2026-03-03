@@ -6,7 +6,7 @@ use crate::ui::theme::Theme;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     Context, Entity, InteractiveElement, IntoElement, MouseButton, MouseDownEvent, ParentElement,
-    Render, ScrollHandle, StatefulInteractiveElement, Styled, Window, div, px, svg,
+    Render, ScrollHandle, StatefulInteractiveElement, Styled, Window, div, px, relative, svg,
 };
 use gpui_component::{IconName, IconNamed};
 
@@ -210,14 +210,51 @@ impl Render for FileExplorerView {
             .h_full()
             .w(px(self.width))
             .bg(Theme::sidebar())
-            .border_r_1()
-            .border_color(Theme::border())
             .flex_shrink_0()
             .child(
-                // File list
+                // Outline first (top-priority section)
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_basis(relative(0.75))
+                    .flex_shrink_0()
+                    .min_h(px(140.))
+                    .child(
+                        div()
+                            .px(px(10.))
+                            .py(px(6.))
+                            .text_xs()
+                            .font_weight(gpui::FontWeight::BOLD)
+                            .text_color(Theme::muted())
+                            .child("OUTLINE"),
+                    )
+                    .child(
+                        div()
+                            .id("outline-scroll")
+                            .flex_1()
+                            .overflow_y_scroll()
+                            .track_scroll(&self.outline_scroll_handle)
+                            .when(has_outline, |this| this.children(outline_elements))
+                            .when(!has_outline, |this| {
+                                this.child(
+                                    div()
+                                        .px(px(10.))
+                                        .py(px(8.))
+                                        .text_sm()
+                                        .text_color(Theme::muted())
+                                        .child("No headings"),
+                                )
+                            }),
+                    ),
+            )
+            .child(div().w_full().h(px(1.)).bg(Theme::border()))
+            .child(
+                // File/folder tree goes below the outline
                 div()
                     .id("file-explorer-scroll")
-                    .flex_1()
+                    .flex_basis(relative(0.25))
+                    .flex_shrink_0()
+                    .min_h(px(90.))
                     .overflow_y_scroll()
                     .track_scroll(&self.files_scroll_handle)
                     .when(!has_entries, |this| {
@@ -234,31 +271,5 @@ impl Render for FileExplorerView {
                     })
                     .when(has_entries, |this| this.children(entry_elements)),
             )
-            .when(has_outline, |this| {
-                this.child(div().w_full().h(px(1.)).bg(Theme::border()))
-                    .child(
-                        div()
-                            .h(px(220.))
-                            .flex()
-                            .flex_col()
-                            .child(
-                                div()
-                                    .px(px(10.))
-                                    .py(px(6.))
-                                    .text_xs()
-                                    .font_weight(gpui::FontWeight::BOLD)
-                                    .text_color(Theme::muted())
-                                    .child("OUTLINE"),
-                            )
-                            .child(
-                                div()
-                                    .id("outline-scroll")
-                                    .flex_1()
-                                    .overflow_y_scroll()
-                                    .track_scroll(&self.outline_scroll_handle)
-                                    .children(outline_elements),
-                            ),
-                    )
-            })
     }
 }

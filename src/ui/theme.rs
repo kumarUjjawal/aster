@@ -10,10 +10,13 @@ impl Theme {
         rgb(0xffffff)
     }
     pub fn sidebar() -> Rgba {
-        rgb(0xececec)
+        rgb(0xf7f7f5)
     }
     pub fn panel_alt() -> Rgba {
         rgb(0xf2f3f7)
+    }
+    pub fn code_block_bg() -> Rgba {
+        rgb(0xf7f6f2)
     }
     pub fn preview_bg() -> Rgba {
         rgb(0xf6f7f8)

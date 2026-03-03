@@ -9,7 +9,7 @@ use crate::ui::root::RootView;
 use camino::Utf8PathBuf;
 use gpui::{
     App, AppContext, Application, Bounds, KeyBinding, Menu, MenuItem, OsAction, Pixels,
-    SystemMenuType, Window, WindowBounds, WindowOptions,
+    SystemMenuType, TitlebarOptions, Window, WindowBounds, WindowOptions,
 };
 use gpui_component::notification::NotificationList;
 use rfd::{MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
@@ -190,6 +190,11 @@ fn open_window(cx: &mut App, initial_path: Option<Utf8PathBuf>) -> anyhow::Resul
     cx.open_window(
         WindowOptions {
             window_bounds: Some(WindowBounds::Maximized(Bounds::<Pixels>::default())),
+            titlebar: Some(TitlebarOptions {
+                title: None,
+                appears_transparent: true,
+                traffic_light_position: None,
+            }),
             ..Default::default()
         },
         |window, cx| build_root_view(window, cx, initial_path.clone()),

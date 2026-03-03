@@ -85,6 +85,7 @@ impl Render for PreviewView {
             .bg(Theme::preview_bg())
             .p(px(18.))
             .text_size(px(settings::get_font_size()))
+            .font_family("Menlo")
             .text_color(Theme::text())
             .flex()
             .flex_col()
@@ -188,7 +189,7 @@ fn render_block(block: Block, scroll_handle: Option<ScrollHandle>) -> gpui::AnyE
             .into_any_element(),
         Block::CodeBlock(text) => div()
             .font_family("Menlo")
-            .bg(Theme::border())
+            .bg(Theme::code_block_bg())
             .p(px(10.))
             .rounded(px(4.))
             .child(SharedString::from(text))
